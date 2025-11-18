@@ -1,52 +1,74 @@
 {
   "expo": {
-    "name": "rhazn-clone",
-    "slug": "rhazn-clone",
+    "name": "RHAZN",
+    "slug": "rhazn-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "rhaznclone",
+    "icon": "./assets/images/rhazn-logo.png",
+    "scheme": "rhazn-app",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+
     "assetBundlePatterns": [
       "**/*"
     ],
+
     "androidStatusBar": {
       "hidden": true,
       "translucent": true,
       "backgroundColor": "#ffffff"
     },
+
     "androidNavigationBar": {
       "visible": false,
       "translucent": true,
       "backgroundColor": "#000000",
       "behavior": "immersiveSticky"
     },
+
     "android": {
+      "package": "com.anonymous.rhaznclone",
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/grape.png",
+        "backgroundImage": "./assets/images/grape.png",
+        "monochromeImage": "./assets/images/grape.png"
       },
-      "edgeToEdgeEnabled": false,
-      "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.rhaznclone"
+
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
+
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.rhaznclone"
+      "bundleIdentifier": "com.anonymous.rhaznclone",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow RHAZN to access your camera",
+        "NSPhotoLibraryUsageDescription": "Allow RHAZN to access your photos",
+        "NSMicrophoneUsageDescription": "Allow RHAZN to access your microphone"
+      }
     },
+
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/rhazn-logo.png"
     },
+
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/rhazn-logo.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
@@ -55,11 +77,31 @@
           }
         }
       ],
-      "expo-video"
+      "expo-video",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "googleServicesFile": null
+          }
+        }
+      ]
     ],
+
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+
+    "extra": {
+      "router": {},
+
+      "supabaseUrl": "${EXPO_PUBLIC_SUPABASE_URL}",
+      "supabaseAnonKey": "${EXPO_PUBLIC_SUPABASE_ANON_KEY}",
+
+      "eas": {
+        "projectId": "43ced0cc-a4aa-41e3-8784-0d5f5f1682e0"
+      }
     }
   }
 }

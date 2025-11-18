@@ -2,12 +2,12 @@ import { useRouter } from "expo-router";
 import React, { useEffect } from "react";
 import { StyleSheet, View } from "react-native";
 import Animated, {
-    FadeIn,
-    FadeOut,
-    useAnimatedStyle,
-    useSharedValue,
-    withRepeat,
-    withTiming,
+  FadeIn,
+  FadeOut,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
 } from "react-native-reanimated";
 
 export default function SplashScreen() {
@@ -36,7 +36,7 @@ export default function SplashScreen() {
       <Animated.Image
         entering={FadeIn.duration(1000)}
         exiting={FadeOut.duration(800)}
-        source={require("../assets/images/rhazn-logo.png")}
+        source={require("@/assets/images/rhazn-logo.png")}
         style={[styles.logo, animatedStyle]}
         resizeMode="contain"
       />

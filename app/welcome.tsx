@@ -6,30 +6,31 @@ import Animated, { FadeInUp } from "react-native-reanimated";
 export default function WelcomeScreen() {
   const router = useRouter();
 
-  // ⏳ Redirection automatique vers /auth après 5 secondes
   useEffect(() => {
     const timer = setTimeout(() => {
-      router.replace("/auth");
+      router.replace("/auth/login"); // ✅ redirige vers Login après intro
     }, 7000);
     return () => clearTimeout(timer);
   }, []);
 
   return (
     <View style={styles.container}>
-      {/* 🖤 Titre principal */}
-      <Animated.View entering={FadeInUp.duration(1200)}>
-        <Text style={styles.title}>BIENVENUE DANS RHAZN...!</Text>
+      
+      {/* ✅ Titre */}
+      <Animated.View entering={FadeInUp.duration(1200).delay(300)}>
+        <Text style={styles.title}>Bienvenue dans RHAZN</Text>
       </Animated.View>
 
-      {/* 🩶 Sous-titres */}
-      <Animated.View entering={FadeInUp.duration(1200).delay(600)}>
+      {/* ✅ Sous-textes */}
+      <Animated.View entering={FadeInUp.duration(1200).delay(700)}>
         <Text style={styles.subtitle}>
-          Le réseau où ton temps devient une récompense.
+          Ici, ton temps devient une valeur réelle.
         </Text>
         <Text style={styles.subtitle}>
-          Ensemble, bâtissons une économie du mérite !
+          Ensemble, construisons l'économie du mérite.
         </Text>
       </Animated.View>
+
     </View>
   );
 }
@@ -37,22 +38,29 @@ export default function WelcomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFFFFF", // 🌿 fond blanc pur
+    backgroundColor: "#000",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 20,
   },
+  logo: {
+    width: 140,
+    height: 140,
+    marginBottom: 25,
+  },
   title: {
-    color: "#000000", // noir profond
-    fontSize: 26,
-    fontWeight: "bold",
+    color: "#D4AF37",
+    fontSize: 24,
+    fontWeight: "500", // ✅ subtil, plus de gras
     textAlign: "center",
     marginBottom: 12,
+    letterSpacing: 0.5,
   },
   subtitle: {
-    color: "#7E7E7E", // gris doux
-    fontSize: 16,
+    color: "#AAA",
+    fontSize: 15,
     textAlign: "center",
+    marginBottom: 4,
     lineHeight: 22,
   },
 });

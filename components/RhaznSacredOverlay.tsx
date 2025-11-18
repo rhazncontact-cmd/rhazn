@@ -1,156 +1,98 @@
-import React from "react";
-import { Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import Animated, { FadeInUp } from "react-native-reanimated";
+import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-type Profile = { name: string; qob: number; avatar?: any };
-type Pact = { id: string; title: string; views: number; thumbnail?: any };
-
-type Props = {
-  onSearch?: (q: string) => void;
-  viewed?: Profile[];      // PACT visionnés
-  metrics?: { subs: number; library: number; creations: number; acset: number };
-  pacts?: Pact[];          // Tous les PACT
-  onOpenPact?: (id: string) => void;
-};
-
-export default function ExplorerSection({
-  onSearch,
-  viewed = [],
-  metrics = { subs: 0, library: 0, creations: 0, acset: 0 },
-  pacts = [],
-  onOpenPact,
-}: Props) {
+export default function RhaznSacredOverlay({
+  onlineCount,
+  qob,
+  timer,
+  totalTime,
+  creator,
+  onPausePress,
+  onInvitePress,
+  day,
+}) {
   return (
-    <View style={styles.wrap}>
-      {/* Barre de recherche */}
-      <View style={styles.searchBar}>
-        <Text style={styles.searchIcon}>🔍</Text>
-        <TextInput
-          placeholder="Rechercher un PACT…"
-          placeholderTextColor="rgba(255,255,255,0.5)"
-          style={styles.input}
-          onChangeText={onSearch}
+    <View style={styles.overlayContainer} pointerEvents="box-none">
+
+      {/* Logo + Jours */}
+      <View style={styles.topCenter}>
+        <Image
+          source={require("../../assets/images/logo-rhazn.png")}
+          style={styles.logo}
+          resizeMode="contain"
         />
+        <Text style={styles.dayText}>Jours : {day} / 30</Text>
       </View>
 
-      {/* PACT visionnés */}
-      <Text style={styles.h2}>👁️ PACT visionnés</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingRight: 20 }}
-        style={{ paddingLeft: 20, paddingVertical: 8 }}
-      >
-        {viewed.map((u, i) => (
-          <Animated.View key={i} entering={FadeInUp.delay(i * 80)} style={styles.profileCard}>
-            <View style={styles.profileImg}>
-              {u.avatar ? (
-                <Image source={u.avatar} style={styles.profileImgReal} />
-              ) : (
-                <View style={{ flex: 1, backgroundColor: "#222", borderRadius: 12 }} />
-              )}
-            </View>
-            <Text style={styles.profileName}>{u.name}</Text>
-            <Text style={styles.profileQob}>⚡ {u.qob}</Text>
-          </Animated.View>
-        ))}
-      </ScrollView>
-
-      {/* Mon Monde */}
-      <Text style={styles.h2}>🌍 Mon Monde</Text>
-      <View style={styles.grid}>
-        <MetricCard label="Abonnements" value={metrics.subs} />
-        <MetricCard label="Ma Bibliothèque" value={metrics.library} />
-        <MetricCard label="Mes Créations" value={metrics.creations} />
-        <MetricCard label="Mes ACSET" value={metrics.acset} active />
+      {/* Left section */}
+      <View style={styles.leftColumn}>
+        <Text style={styles.online}>Online {onlineCount}</Text>
+        <Text style={styles.timer}>{timer}s / {totalTime}s</Text>
+        <Text style={styles.creator}>@{creator}</Text>
       </View>
 
-      {/* Tous les PACT */}
-      <Text style={styles.h2}>⭐ Tous les PACT</Text>
-      <View style={styles.pactGrid}>
-        {pacts.map((p, i) => (
-          <Animated.View key={p.id} entering={FadeInUp.delay(i * 70)} style={styles.pactCard}>
-            <TouchableOpacity onPress={() => onOpenPact?.(p.id)} activeOpacity={0.8}>
-              <View style={styles.thumb}>
-                {p.thumbnail ? (
-                  <Image source={p.thumbnail} style={styles.thumbReal} />
-                ) : (
-                  <View style={{ flex: 1, backgroundColor: "#222", borderRadius: 12 }} />
-                )}
-                <View style={styles.badgeTime}><Text style={styles.badgeTimeTxt}>⏱ 60s</Text></View>
-              </View>
-              <Text style={styles.pactTitle} numberOfLines={1}>{p.title}</Text>
-              <Text style={styles.pactViews}>👁️ {p.views}</Text>
-            </TouchableOpacity>
-          </Animated.View>
-        ))}
-      </View>
-    </View>
-  );
-}
+      {/* Right section */}
+      <View style={styles.rightColumn}>
+        <Text style={styles.qob}>QOB {qob}</Text>
 
-function MetricCard({ label, value, active }: { label: string; value: number; active?: boolean }) {
-  return (
-    <View style={styles.card}>
-      <Text style={styles.cardLabel}>{label}</Text>
-      <Text style={[styles.cardValue, active && { color: "#4ade80" }]}>{value.toString().padStart(2, "0")}</Text>
+        <TouchableOpacity onPress={onPausePress}>
+          <Text style={styles.action}>Pause</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={onInvitePress}>
+          <Text style={styles.action}>Inviter</Text>
+        </TouchableOpacity>
+      </View>
+
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { backgroundColor: "#000" },
+  overlayContainer: {
+    position: "absolute",
+    top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: "center",
+  },
 
-  searchBar: {
-    backgroundColor: "#1a1a1a",
-    marginHorizontal: 20,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    flexDirection: "row",
+  topCenter: {
+    position: "absolute",
+    top: 35,
+    width: "100%",
     alignItems: "center",
-    borderColor: "rgba(212,175,55,0.18)",
-    borderWidth: 1,
   },
-  searchIcon: { color: "#D4AF37", fontSize: 16 },
-  input: { color: "#fff", marginLeft: 8, fontSize: 16 },
-
-  h2: { color: "#fff", fontSize: 18, fontWeight: "700", marginTop: 22, marginBottom: 10, paddingHorizontal: 20 },
-
-  profileCard: { width: 100, marginRight: 14, alignItems: "center" },
-  profileImg: { width: 100, height: 100, borderRadius: 16, borderWidth: 1, borderColor: "rgba(212,175,55,0.4)", overflow: "hidden" },
-  profileImgReal: { width: "100%", height: "100%" },
-  profileName: { color: "#fff", fontSize: 12, marginTop: 6 },
-  profileQob: { color: "#D4AF37", fontSize: 12 },
-
-  grid: { paddingHorizontal: 20, flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
-  card: {
-    width: "48%",
-    backgroundColor: "#0f0f0f",
-    borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 14,
-    marginBottom: 12,
-    borderWidth: 0.5,
-    borderColor: "rgba(212,175,55,0.35)",
+  logo: {
+    width: 38,
+    height: 38,
+    tintColor: "#D4AF37",
+    opacity: 0.9,
   },
-  cardLabel: { color: "#bbb", fontSize: 12 },
-  cardValue: { color: "#fff", fontSize: 20, fontWeight: "800", marginTop: 6 },
-
-  pactGrid: { paddingHorizontal: 20, flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", paddingBottom: 24 },
-  pactCard: {
-    width: "48%",
-    backgroundColor: "#0f0f0f",
-    borderRadius: 16,
-    marginBottom: 12,
-    borderWidth: 0.5,
-    borderColor: "rgba(212,175,55,0.35)",
-    overflow: "hidden",
+  dayText: {
+    color: "#D4AF37",
+    fontSize: 13,
+    marginTop: 4,
   },
-  thumb: { width: "100%", height: 120, backgroundColor: "#151515", borderBottomWidth: 1, borderBottomColor: "#222", borderTopLeftRadius: 16, borderTopRightRadius: 16 },
-  thumbReal: { width: "100%", height: "100%", borderTopLeftRadius: 16, borderTopRightRadius: 16 },
-  badgeTime: { position: "absolute", top: 8, right: 8, backgroundColor: "rgba(0,0,0,0.5)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, borderWidth: 0.5, borderColor: "rgba(212,175,55,0.45)" },
-  badgeTimeTxt: { color: "#D4AF37", fontSize: 12, fontWeight: "700" },
-  pactTitle: { color: "#fff", fontSize: 14, fontWeight: "600", marginTop: 8, paddingHorizontal: 10 },
-  pactViews: { color: "#999", fontSize: 12, paddingHorizontal: 10, marginBottom: 10 },
+
+  leftColumn: {
+    position: "absolute",
+    left: 20,
+    gap: 14,
+  },
+
+  rightColumn: {
+    position: "absolute",
+    right: 20,
+    gap: 14,
+    alignItems: "flex-end",
+  },
+
+  online: { color: "#D4AF37", fontSize: 15, fontWeight: "600" },
+  qob: { color: "#D4AF37", fontSize: 15, fontWeight: "700" },
+  timer: { color: "#fff", fontSize: 14 },
+  creator: { color: "#fff", fontSize: 14, marginTop: 6 },
+
+  action: {
+    color: "#D4AF37",
+    fontSize: 15,
+    fontWeight: "600",
+  },
 });

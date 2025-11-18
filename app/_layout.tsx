@@ -1,64 +1,54 @@
 import * as NavigationBar from "expo-navigation-bar";
-import { Stack } from "expo-router";
+import { Slot, usePathname } from "expo-router";
 import * as ScreenCapture from "expo-screen-capture";
-import React, { useEffect } from "react";
-import { StatusBar } from "react-native";
+import { useEffect } from "react";
+import { StatusBar, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+
+// Providers
+import { UserProvider } from "../context/UserContext";
+import { WalletProvider } from "../context/WalletContext";
+
+import LayoutWithFooter from "./providers/LayoutWithFooter";
 
 export default function RootLayout() {
+  const pathname = usePathname();
+
   useEffect(() => {
-    // ✅ Empêcher capture écran
     ScreenCapture.preventScreenCaptureAsync();
 
-    // ✅ Full immersive mode compatible edge-to-edge
-    const enableImmersive = async () => {
-      try {
-        await NavigationBar.setVisibilityAsync("hidden");
-      } catch (e) {
-        console.log("Immersive nav error:", e);
-      }
-    };
+    // NavigationBar stable — désactive le swipe Android natif
+    NavigationBar.setVisibilityAsync("hidden").catch(() => {});
+    NavigationBar.setBehaviorAsync("inset-swipe").catch(() => {});
 
-    enableImmersive();
-
-    return () => {
-      ScreenCapture.allowScreenCaptureAsync();
-    };
+    return () => ScreenCapture.allowScreenCaptureAsync();
   }, []);
 
+  const noFooterPages = [
+    "/", "/index", "/splash", "/welcome",
+    "/auth/login", "/auth/register", "/flux-intro"
+  ];
+
+  const showFooter = !noFooterPages.includes(pathname);
+
   return (
-    <>
-      <StatusBar hidden translucent />
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <UserProvider>
+        <WalletProvider>
+          <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          animation: "fade",
-          statusBarStyle: "light",
-          statusBarColor: "#000",
-        }}
-      >
-        {/* 🚀 Démarrage */}
-        <Stack.Screen name="splash" />
+          <View style={{ flex: 1 }}>
+            {showFooter ? (
+              <LayoutWithFooter>
+                <Slot />
+              </LayoutWithFooter>
+            ) : (
+              <Slot />
+            )}
+          </View>
 
-        {/* 🎬 Intro sacrée */}
-        <Stack.Screen name="welcome" />
-
-        {/* 🔑 Auth */}
-        <Stack.Screen name="auth/index" />
-        <Stack.Screen name="access" />
-
-        {/* 🧭 Dashboard */}
-        <Stack.Screen name="dashboard" />
-
-        {/* 🍇 Intro Flux du Mérite */}
-        <Stack.Screen name="flux-intro" />
-
-        {/* 🎥 Flux du Mérite */}
-        <Stack.Screen name="flux" />
-
-        {/* 🎵 Player Melodies */}
-        <Stack.Screen name="melodies-rhazn" />
-      </Stack>
-    </>
+        </WalletProvider>
+      </UserProvider>
+    </GestureHandlerRootView>
   );
 }

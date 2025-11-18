@@ -1,59 +1,75 @@
 import { useRouter } from "expo-router";
-import React, { useEffect } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { useEffect } from "react";
+import { Image, StyleSheet, Text, View } from "react-native";
 import Animated, {
-    FadeIn,
-    FadeInDown,
-    useAnimatedStyle,
-    useSharedValue,
-    withRepeat,
-    withTiming,
+  FadeInUp,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
 } from "react-native-reanimated";
 
 export default function FluxIntro() {
   const router = useRouter();
   const scale = useSharedValue(1);
 
-  // 🌟 Animation douce (pulsation sacrée)
   useEffect(() => {
+    // 💫 Pulsation douce
     scale.value = withRepeat(
-      withTiming(1.10, { duration: 1400 }),
+      withSequence(
+        withTiming(1.08, { duration: 1200 }),
+        withTiming(1, { duration: 1200 })
+      ),
       -1,
       true
     );
-  }, []);
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  // ✅ Transition automatique vers le Flux après 5s
-  useEffect(() => {
+    // ⏳ Redirection après 10 secondes
     const timer = setTimeout(() => {
-      router.replace("/flux");
-    }, 5000);
+      runOnJS(router.replace)("/rz-roles");
+    }, 10000);
 
     return () => clearTimeout(timer);
   }, []);
 
+  const animatedLogo = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
   return (
     <View style={styles.container}>
-      {/* Grappe animée */}
-      <Animated.Image
-        entering={FadeIn.duration(1000).delay(200)}
-        source={require("../assets/images/grape.png")}
-        style={[styles.icon, animatedStyle]}
-        resizeMode="contain"
-      />
 
-      {/* Texte sacré */}
-      <Animated.View entering={FadeInDown.duration(1200).delay(700)}>
-        <Text style={styles.title}>BIENVENUE</Text>
-        <Text style={styles.subtitle}>dans le Flux du Mérite</Text>
-        <Text style={styles.goldText}>
-          Là où l’authenticité devient valeur
-        </Text>
+      {/* ✅ Logo raisin pulsant */}
+      <Animated.View style={[styles.logoContainer, animatedLogo]} entering={FadeInUp.duration(1200).delay(600)}>
+        <Image
+          source={require("@/assets/images/grape.png")}
+          style={styles.logo}
+          resizeMode="contain"
+        />
       </Animated.View>
+
+      {/* ✅ Titre */}
+      <Animated.View entering={FadeInUp.duration(1200).delay(900)}>
+        <Text style={styles.title}>Bienvenue le menu principal</Text>
+      </Animated.View>
+
+      {/* ✅ Texte 1 */}
+      <Animated.View entering={FadeInUp.duration(1200).delay(1500)}>
+        <Text style={styles.subtitle}>Ici, chaque regard est un investissement inestimable.</Text>
+      </Animated.View>
+
+      {/* ✅ Texte 2 */}
+      <Animated.View entering={FadeInUp.duration(1200).delay(2200)}>
+        <Text style={styles.subtitle}>l'avenir se trouve ici</Text>
+      </Animated.View>
+
+      {/* ✅ Signature */}
+      <Animated.View entering={FadeInUp.duration(1200).delay(3000)}>
+        <Text style={styles.signature}>Bienvenue chez vouz.</Text>
+      </Animated.View>
+
     </View>
   );
 }
@@ -64,32 +80,43 @@ const styles = StyleSheet.create({
     backgroundColor: "#000",
     alignItems: "center",
     justifyContent: "center",
+    padding: 24,
   },
-  icon: {
-    width: 165,
-    height: 165,
-    marginBottom: 30,
+  rLogo: {
+    width: 120,
+    height: 120,
+    opacity: 0.9,
+    marginBottom: 10,
+  },
+  logoContainer: {
+    marginBottom: 25,
+  },
+  logo: {
+    width: 160,
+    height: 160,
   },
   title: {
-    color: "#FFFFFF",
-    fontSize: 28,
-    fontWeight: "900",
+    fontSize: 22,
+    color: "#FFD700",
+    fontWeight: "400",
     textAlign: "center",
     marginBottom: 6,
-    letterSpacing: 1.2,
+    opacity: 0.95,
   },
   subtitle: {
-    color: "#D3D3D3",
-    fontSize: 18,
-    textAlign: "center",
-    marginBottom: 6,
-    fontWeight: "600",
-  },
-  goldText: {
-    color: "#FFD700",
     fontSize: 16,
+    color: "#DDDDDD",
     textAlign: "center",
+    opacity: 0.8,
+    marginBottom: 6,
+    fontWeight: "300",
+  },
+  signature: {
+    fontSize: 15,
+    color: "#D4AF37",
+    textAlign: "center",
+    marginTop: 12,
     fontStyle: "italic",
-    fontWeight: "500",
+    opacity: 0.9,
   },
 });

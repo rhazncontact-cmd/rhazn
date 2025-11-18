@@ -1,29 +1,37 @@
-import { Link } from 'expo-router';
-import { StyleSheet } from 'react-native';
-
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
+import { useRouter } from "expo-router";
+import { Button, StyleSheet, Text, View } from "react-native";
 
 export default function ModalScreen() {
+  const router = useRouter();
+
   return (
-    <ThemedView style={styles.container}>
-      <ThemedText type="title">This is a modal</ThemedText>
-      <Link href="/" dismissTo style={styles.link}>
-        <ThemedText type="link">Go to home screen</ThemedText>
-      </Link>
-    </ThemedView>
+    <View style={styles.container}>
+      <Text style={styles.title}>Fenêtre Modale</Text>
+      <Text style={styles.text}>Ceci est un modal RHAZN simplifié.</Text>
+
+      <Button title="Fermer" onPress={() => router.back()} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#000",
+    justifyContent: "center",
+    alignItems: "center",
     padding: 20,
   },
-  link: {
-    marginTop: 15,
-    paddingVertical: 15,
+  title: {
+    color: "#D4AF37",
+    fontSize: 20,
+    fontWeight: "bold",
+    marginBottom: 12,
+  },
+  text: {
+    color: "#ccc",
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 20,
   },
 });

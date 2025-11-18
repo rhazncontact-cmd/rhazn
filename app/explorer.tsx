@@ -1,31 +1,46 @@
 import { Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import * as NavigationBar from "expo-navigation-bar";
 import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
-import { Animated, Easing, Image, Modal, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  Animated,
+  Easing,
+  Image,
+  Modal,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from "react-native";
+
+// ✅ Import de la chaîne RZ
+import RZBottomSheet from "./components/RZBottomSheet";
 
 export default function ExplorerRHAZN() {
   const router = useRouter();
   const [modalVisible, setModalVisible] = useState(false);
   const [showBack, setShowBack] = useState(false);
 
-  // ✅ Cache la barre Android
   useEffect(() => {
     NavigationBar.setVisibilityAsync("hidden");
     NavigationBar.setBehaviorAsync("overlay-swipe");
   }, []);
 
-  // ✨ Animation dorée
-  const glow = new Animated.Value(0);
-  Animated.loop(
-    Animated.sequence([
-      Animated.timing(glow, { toValue: 1, duration: 1600, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
-      Animated.timing(glow, { toValue: 0, duration: 1600, easing: Easing.inOut(Easing.ease), useNativeDriver: false })
-    ])
-  ).start();
+  const glow = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glow, { toValue: 1, duration: 1600, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+        Animated.timing(glow, { toValue: 0, duration: 1600, easing: Easing.inOut(Easing.ease), useNativeDriver: false })
+      ])
+    ).start();
+  }, []);
+
   const glowColor = glow.interpolate({ inputRange: [0, 1], outputRange: ["#D4AF37", "#F8E48C"] });
 
-  // ✅ Classement dynamique → tri automatique selon QOB
   const creators = [
     { name: "BA", qob: 901008, avatar: require("../assets/images/avatar1.png") },
     { name: "Sr Doc", qob: 13010746, avatar: require("../assets/images/avatar7.png") },
@@ -50,14 +65,11 @@ export default function ExplorerRHAZN() {
   const goToSubs = () => router.push("/subscriptions");
   const goToMyCreations = () => router.push("/my-pacts");
 
-  const handleTap = () => {
-    setShowBack(true);
-    setTimeout(() => setShowBack(false), 2000);
-  };
+  const handleTap = () => { setShowBack(true); setTimeout(() => setShowBack(false), 2000); };
 
   const handleCategoryPress = (label) => {
-    if (label === "Vidéos") return router.push("/flux");
-    if (label === "Mélodies") return router.push("/melodies");
+    if (label === "Vidéos") return router.push("/banq");
+    if (label === "Mélodies") return router.push("/melodies-rhazn");
     setModalVisible(true);
   };
 
@@ -65,18 +77,17 @@ export default function ExplorerRHAZN() {
     <View style={styles.container}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
-      {/* ✅ Header RHAZN */}
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Explorer...</Text>
-        <TouchableOpacity onPress={() => router.push("/")}>
+        <Text style={styles.title}>Explorer</Text>
+        <TouchableOpacity onPress={() => router.push("/rz-user-dashboard")}>
           <Image source={require("../assets/images/rhazn-logo.png")} style={{ width: 60, height: 60, resizeMode: "contain" }} />
         </TouchableOpacity>
       </View>
 
       <TouchableOpacity activeOpacity={1} onPress={handleTap} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ paddingBottom: 140, paddingTop: 120 }}>
+        <ScrollView contentContainerStyle={{ paddingBottom: 150, paddingTop: 120 }}>
 
-          {/* ✅ Barre recherche */}
           <TouchableOpacity onPress={() => router.push("/search")}>
             <View style={styles.SearchBar}>
               <Feather name="search" size={20} color="#888" />
@@ -84,33 +95,20 @@ export default function ExplorerRHAZN() {
             </View>
           </TouchableOpacity>
 
-          {/* ✅ Classement */}
-          <Text style={styles.sectionTitle}>Classement — Mois Précédent</Text>
+          <Text style={styles.sectionTitle}>Top Créateurs — Mois Précédent</Text>
 
-          {/* ✅ Trophées */}
-          <View style={{ flexDirection: "row" }}>
-            <FeatureAwardCard label="CIR du Mois" score="1500" icon={<Ionicons name="trophy" size={32} color="#D4AF37" />} onPress={() => router.push("/cir")} />
-            <FeatureAwardCard label="PRIX D'HOR" score="1200" icon={<Feather name="award" size={32} color="#D4AF37" />} onPress={() => router.push("/prix-dhor")} />
-          </View>
-
-          {/* ✅ ligne gold */}
           <Animated.View style={{
-            height: 2, backgroundColor: glowColor, marginTop: 18, marginBottom: 35,
-            marginHorizontal: 24, borderRadius: 4, shadowColor: "#F8E48C", shadowOpacity: 0.9, shadowRadius: 6
+            height: 2, backgroundColor: glowColor, marginVertical: 30,
+            marginHorizontal: 24, borderRadius: 4
           }} />
 
-          {/* ✅ TOP 10 */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 25 }}>
             {sortedCreators.map((item, i) => (
               <ProfileCard key={i} name={item.name} qob={item.qob} avatar={item.avatar} onPress={() => goToCreator(item.name)} />
             ))}
-            {[1,2,3,4,5,6].map((n) => (
-              <ProfileCard key={`extra-${n}`} name="À venir" qob="---" placeholder />
-            ))}
           </ScrollView>
 
-          {/* ✅ Mon Coin */}
-          <Text style={styles.sectionTitle}>Mon Coin RHAZN</Text>
+          <Text style={styles.sectionTitle}>Mon Espace</Text>
           <View style={styles.grid}>
             <FeatureCard label="Abonnements" count="20" icon={<Feather name="users" size={22} color="#D4AF37" />} onPress={goToSubs} />
             <FeatureCard label="Ma Bibliothèque" count="24" icon={<Ionicons name="book-outline" size={22} color="#D4AF37" />} onPress={goToLibrary} />
@@ -118,8 +116,7 @@ export default function ExplorerRHAZN() {
             <FeatureCard label="Mes ACSET" count="103" active icon={<MaterialIcons name="account-balance-wallet" size={22} color="#4ade80" />} onPress={goToWallet} />
           </View>
 
-          {/* ✅ Catégories */}
-          <Text style={[styles.sectionTitle, { marginTop: 30 }]}>PACT — CATÉGORIES</Text>
+          <Text style={[styles.sectionTitle, { marginTop: 30 }]}>Catégories PACT</Text>
           <View style={styles.pactGrid}>
             {categories.map((item, i) => (
               <TouchableOpacity key={i} onPress={() => handleCategoryPress(item.label)} style={styles.featureCard}>
@@ -128,14 +125,12 @@ export default function ExplorerRHAZN() {
               </TouchableOpacity>
             ))}
           </View>
-
         </ScrollView>
 
-        {/* ✅ Modal Coming Soon */}
         <Modal visible={modalVisible} transparent animationType="fade">
           <View style={styles.modalOverlay}>
             <View style={styles.modalBox}>
-              <Text style={styles.modalText}>Cette option n'est pas encore disponible{"\n"}— Coming soon —</Text>
+              <Text style={styles.modalText}>Option bientôt disponible</Text>
               <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.quitButton}>
                 <Text style={{ fontWeight: "700", textAlign: "center" }}>Quitter</Text>
               </TouchableOpacity>
@@ -143,50 +138,27 @@ export default function ExplorerRHAZN() {
           </View>
         </Modal>
 
-        {/* ✅ Retour flottant */}
         {showBack && (
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <Ionicons name="arrow-back-circle" size={62} color="#D4AF37" />
           </TouchableOpacity>
         )}
       </TouchableOpacity>
+
+      {/* ✅ Ajout RZ Communication ici */}
+      <RZBottomSheet />
     </View>
   );
 }
 
-/*************** CARDS ***************/
-function ProfileCard({ name, qob, avatar, onPress, placeholder }) {
+function ProfileCard({ name, qob, avatar, onPress }) {
   return (
     <TouchableOpacity style={styles.profileCard} onPress={onPress}>
       <View style={styles.profileImage}>
-        {placeholder ? (
-          <View style={{ flex: 1, backgroundColor: "#111", alignItems: "center", justifyContent: "center" }}>
-            <Ionicons name="person-circle-outline" size={32} color="#666" />
-          </View>
-        ) : <Image source={avatar} style={{ width: "100%", height: "100%" }} /> }
+        <Image source={avatar} style={{ width: "100%", height: "100%" }} />
       </View>
       <Text style={styles.profileName}>{name}</Text>
-      <View style={styles.profileCount}>
-        <Text style={{ color: placeholder ? "#666" : "#D4AF37", fontWeight: "bold", fontSize: 14 }}>Q</Text>
-        <Text style={{ color: placeholder ? "#555" : "#aaa" }}>{qob}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-function FeatureAwardCard({ label, score, icon, onPress }) {
-  return (
-    <TouchableOpacity style={styles.profileCard} onPress={onPress}>
-      <View style={styles.profileImage}>
-        <View style={{ flex: 1, backgroundColor: "#111", alignItems: "center", justifyContent: "center" }}>
-          {icon}
-        </View>
-      </View>
-      <Text style={styles.profileName}>{label}</Text>
-      <View style={styles.profileCount}>
-        <Text style={{ color: "#D4AF37", fontWeight: "bold", fontSize: 14 }}>Q</Text>
-        <Text style={{ color: "#aaa" }}>{score}</Text>
-      </View>
+      <Text style={styles.profileCount}>{qob} QOB</Text>
     </TouchableOpacity>
   );
 }
@@ -201,7 +173,6 @@ function FeatureCard({ label, count, icon, active, onPress }) {
   );
 }
 
-/*************** STYLES ***************/
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
   header: { position: "absolute", top: 0, left: 0, right: 0, paddingTop: 42, paddingHorizontal: 20, paddingBottom: 10, backgroundColor: "#000", flexDirection: "row", justifyContent: "space-between", alignItems: "center", zIndex: 999 },
@@ -212,7 +183,7 @@ const styles = StyleSheet.create({
   profileCard: { width: 120, marginRight: 16 },
   profileImage: { width: 120, height: 120, backgroundColor: "#222", borderRadius: 16, overflow: "hidden" },
   profileName: { color: "#fff", marginTop: 6, fontSize: 13, textAlign: "center" },
-  profileCount: { flexDirection: "row", justifyContent: "center", alignItems: "center", marginTop: 4, gap: 4 },
+  profileCount: { color: "#D4AF37", fontSize: 12, textAlign: "center", marginTop: 4 },
   grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", paddingHorizontal: 20 },
   featureCard: { width: "48%", backgroundColor: "#111", paddingVertical: 20, marginBottom: 16, borderRadius: 14, borderWidth: 1, borderColor: "#222", alignItems: "center" },
   featureIcon: { backgroundColor: "#222", borderRadius: 12, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: "#333" },

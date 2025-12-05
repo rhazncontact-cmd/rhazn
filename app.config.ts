@@ -1,4 +1,4 @@
-// app.config.ts — Configuration officielle RHAZN (VERSION FINALE DÉFINITIVE SDK 36)
+// app.config.ts — Configuration officielle RHAZN (VERSION FINALE STABLE)
 import "dotenv/config";
 import { ConfigContext, ExpoConfig } from "expo/config";
 
@@ -36,7 +36,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     icon: "./assets/images/rhazn-logo.png",
     assetBundlePatterns: ["**/*"],
 
-    /** ✅ ANDROID — SDK 36 FORCÉ */
+    /** ✅ ANDROID — CONFIG STABLE */
     android: {
       package: androidPackage,
 
@@ -58,9 +58,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       softwareKeyboardLayoutMode: "pan",
       edgeToEdge: true,
 
-      // ✅ FORÇAGE DÉFINITIF
-      compileSdkVersion: 36,
-      targetSdkVersion: 36,
+      // ✅ Compatibilité NATIVE corrigée
+      compileSdkVersion: 34,
+      targetSdkVersion: 34,
       minSdkVersion: 24,
 
       statusBar: {
@@ -125,7 +125,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       favicon: "./assets/images/rhazn-logo.png",
     },
 
-    /** ✅ PLUGINS OFFICIELS — VERSION FINALE DÉFINITIVE */
+    /** ✅ PLUGINS OFFICIELS — STABLES */
     plugins: [
       "expo-router",
       "expo-video",
@@ -133,7 +133,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       "expo-local-authentication",
 
       "expo-secure-store", // ✅ PIN & Sécurité
-      "expo-barcode-scanner",
+      "expo-barcode-scanner", // ✅ Compatible avec SDK 34 natif
 
       [
         "expo-splash-screen",
@@ -149,11 +149,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         "expo-build-properties",
         {
           android: {
-            // ✅ BLOQUE DÉFINITIVEMENT L’ERREUR GRADLE
-            compileSdkVersion: 36,
-            targetSdkVersion: 36,
+            // ✅ COMPATIBILITÉ NATIVE GARANTIE
+            compileSdkVersion: 34,
+            targetSdkVersion: 34,
             minSdkVersion: 24,
-            buildToolsVersion: "36.0.0"
+            buildToolsVersion: "36.0.0",
           },
           ios: {
             useFrameworks: "static",

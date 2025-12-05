@@ -1,4 +1,4 @@
-// app.config.ts — Configuration officielle RHAZN (VERSION FINALE CORRIGÉE)
+// app.config.ts — Configuration officielle RHAZN (VERSION FINALE DÉFINITIVE SDK 36)
 import "dotenv/config";
 import { ConfigContext, ExpoConfig } from "expo/config";
 
@@ -36,7 +36,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     icon: "./assets/images/rhazn-logo.png",
     assetBundlePatterns: ["**/*"],
 
-    /** ✅ ANDROID — VERSION FINALE SDK 36 */
+    /** ✅ ANDROID — SDK 36 FORCÉ */
     android: {
       package: androidPackage,
 
@@ -58,7 +58,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       softwareKeyboardLayoutMode: "pan",
       edgeToEdge: true,
 
-      // ✅ CORRECTION CRITIQUE
+      // ✅ FORÇAGE DÉFINITIF
       compileSdkVersion: 36,
       targetSdkVersion: 36,
       minSdkVersion: 24,
@@ -82,9 +82,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           action: "VIEW",
           category: ["BROWSABLE", "DEFAULT"],
           data: [
-            {
-              scheme: "rhazn",
-            },
+            { scheme: "rhazn" },
             {
               scheme: "https",
               host: "rhazn.org",
@@ -103,9 +101,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       /** ✅ DEEPLINK iOS COMPLET */
       infoPlist: {
         CFBundleURLTypes: [
-          {
-            CFBundleURLSchemes: ["rhazn"],
-          },
+          { CFBundleURLSchemes: ["rhazn"] },
         ],
 
         NSCameraUsageDescription:
@@ -129,15 +125,14 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       favicon: "./assets/images/rhazn-logo.png",
     },
 
-    /** ✅ PLUGINS OFFICIELS — VERSION FINALE CORRIGÉE */
+    /** ✅ PLUGINS OFFICIELS — VERSION FINALE DÉFINITIVE */
     plugins: [
       "expo-router",
       "expo-video",
       "expo-web-browser",
       "expo-local-authentication",
 
-      "expo-secure-store", // ✅ PIN & Sécurité OK
-
+      "expo-secure-store", // ✅ PIN & Sécurité
       "expo-barcode-scanner",
 
       [
@@ -154,10 +149,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         "expo-build-properties",
         {
           android: {
-            // ✅ CORRECTION CRITIQUE POUR MEDIA3 / CAMERA / VIDEO
+            // ✅ BLOQUE DÉFINITIVEMENT L’ERREUR GRADLE
             compileSdkVersion: 36,
             targetSdkVersion: 36,
             minSdkVersion: 24,
+            buildToolsVersion: "36.0.0"
           },
           ios: {
             useFrameworks: "static",

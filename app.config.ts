@@ -1,4 +1,4 @@
-// app.config.ts — Configuration officielle RHAZN
+// app.config.ts — Configuration officielle RHAZN (VERSION FINALE CORRIGÉE)
 import "dotenv/config";
 import { ConfigContext, ExpoConfig } from "expo/config";
 
@@ -36,7 +36,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     icon: "./assets/images/rhazn-logo.png",
     assetBundlePatterns: ["**/*"],
 
-    /** ANDROID */
+    /** ✅ ANDROID — VERSION FINALE SDK 36 */
     android: {
       package: androidPackage,
 
@@ -58,9 +58,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       softwareKeyboardLayoutMode: "pan",
       edgeToEdge: true,
 
-      compileSdkVersion: 34,
-      targetSdkVersion: 34,
-      minSdkVersion: 23,
+      // ✅ CORRECTION CRITIQUE
+      compileSdkVersion: 36,
+      targetSdkVersion: 36,
+      minSdkVersion: 24,
 
       statusBar: {
         hidden: false,
@@ -128,14 +129,14 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       favicon: "./assets/images/rhazn-logo.png",
     },
 
-    /** ✅ PLUGINS OFFICIELS — VERSION FINALE */
+    /** ✅ PLUGINS OFFICIELS — VERSION FINALE CORRIGÉE */
     plugins: [
       "expo-router",
       "expo-video",
       "expo-web-browser",
       "expo-local-authentication",
 
-      "expo-secure-store", // ✅ AJOUT FINAL OBLIGATOIRE POUR LE PIN & LA SÉCURITÉ
+      "expo-secure-store", // ✅ PIN & Sécurité OK
 
       "expo-barcode-scanner",
 
@@ -153,8 +154,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         "expo-build-properties",
         {
           android: {
-            compileSdkVersion: 34,
-            targetSdkVersion: 34,
+            // ✅ CORRECTION CRITIQUE POUR MEDIA3 / CAMERA / VIDEO
+            compileSdkVersion: 36,
+            targetSdkVersion: 36,
+            minSdkVersion: 24,
           },
           ios: {
             useFrameworks: "static",

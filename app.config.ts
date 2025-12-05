@@ -29,7 +29,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     icon: "./assets/images/rhazn-logo.png",
     assetBundlePatterns: ["**/*"],
 
-    /** ✅ ANDROID — COMPILATION 36 OBLIGATOIRE */
+    /** ✅ ANDROID — VERSION DÉFINITIVE SDK 36 */
     android: {
       package: androidPackage,
 
@@ -83,14 +83,13 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       favicon: "./assets/images/rhazn-logo.png",
     },
 
-    /** ✅ PLUGINS */
+    /** ✅ PLUGINS — VERSION STABLE SANS BARCODE-SCANNER */
     plugins: [
       "expo-router",
       "expo-video",
       "expo-web-browser",
       "expo-local-authentication",
       "expo-secure-store",
-      "expo-barcode-scanner",
 
       [
         "expo-splash-screen",

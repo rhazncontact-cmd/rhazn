@@ -1,8 +1,8 @@
 // app/upload-suspentz.tsx
+// VERSION PRO — RHAZN OFFICIEL
+
 import { Feather, Ionicons } from "@expo/vector-icons";
-import { Audio } from "expo-av";
 import * as ImagePicker from "expo-image-picker";
-import * as NavigationBar from "expo-navigation-bar";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -11,7 +11,6 @@ import {
   Image,
   Keyboard,
   KeyboardAvoidingView,
-  Modal,
   PanResponder,
   Platform,
   ScrollView,
@@ -22,10 +21,16 @@ import {
   View
 } from "react-native";
 
+import { useUser } from "../context/UserContext";
 import { supabase } from "../lib/supabase";
 import { uploadFluxVideo } from "./services/videoStorageService";
 
-/* --- WEEK LOGIC --- */
+
+/* SYSTÈME RHAZN */
+const TAN_COST = 125;
+
+
+/* UTIL — Semaine ISO */
 function isoWeek(date: Date) {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const day = d.getUTCDay() || 7;
@@ -34,7 +39,8 @@ function isoWeek(date: Date) {
   return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
 }
 
-/* Vidéos CODE (inchangé) */
+
+/* Vidéo CODÉE (inchangé) */
 const codeVideos = {
   1: "https://storage.rhazn.app/codes/1.mp4",
   2: "https://storage.rhazn.app/codes/2.mp4",
@@ -43,8 +49,10 @@ const codeVideos = {
   5: "https://storage.rhazn.app/codes/5.mp4",
 };
 
+
 export default function UploadSuspentz() {
   const router = useRouter();
+  const { user, refreshUser } = useUser();
 
   const [video, setVideo] = useState<string | null>(null);
   const [title, setTitle] = useState<string>("");
@@ -56,7 +64,19 @@ export default function UploadSuspentz() {
 
   const activeCode = ((isoWeek(new Date()) - 1) % 50) + 1;
 
-  /* Swipe LEFT only */
+
+  /* PROTECTION — TAN minimum */
+  useEffect(() => {
+    if (!user) return;
+
+    if (user.tan < 1) {
+      showRZ("Solde insuffisant : 1 TAN minimum requis.");
+      setTimeout(() => router.replace("/agent-buy-acset"), 1200);
+    }
+  }, [user]);
+
+
+  /* SWIPE */
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) =>
@@ -67,7 +87,8 @@ export default function UploadSuspentz() {
     })
   ).current;
 
-  /* Alert */
+
+  /* Alert RHAZN */
   const rzOpacity = useRef(new Animated.Value(0)).current;
   const rzY = useRef(new Animated.Value(20)).current;
 
@@ -86,6 +107,7 @@ export default function UploadSuspentz() {
       ]).start(() => setRzVisible(false));
     }, 3000);
   }
+
 
   /* Keyboard animation */
   const inputY = useRef(new Animated.Value(0)).current;
@@ -109,15 +131,6 @@ export default function UploadSuspentz() {
     return () => { show.remove(); hide.remove(); };
   }, []);
 
-  /* Sound */
-  useEffect(() => {
-    (async () => {
-      try {
-        await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
-      } catch {}
-    })();
-    NavigationBar.setVisibilityAsync("hidden").catch(() => {});
-  }, []);
 
   /* Pick video */
   async function pickVideo() {
@@ -128,41 +141,62 @@ export default function UploadSuspentz() {
     if (!r.canceled) setVideo(r.assets[0].uri);
   }
 
-  /* Submit */
+
+  /* SUBMIT — VERSION PRO */
   async function submit() {
+    if (!user) return;
     if (!title.trim()) return showRZ("Un titre est requis.");
     if (!video) return showRZ("Sélectionnez une vidéo.");
+
+    if (user.tan < TAN_COST)
+      return showRZ(`Solde insuffisant : ${TAN_COST} TAN requis.`);
 
     setUploading(true);
 
     try {
+      // Upload video
       const uploadUrl = await uploadFluxVideo(video, setProgress, title, activeCode);
 
-      const { error } = await supabase
-        .from("suspentz")
-        .insert({
-          title,
-          url: uploadUrl,
-          code: activeCode,
-          created_at: new Date(),
-          etat: "pending", // Pour validation IA + admin
-        });
+      // Déduction TAN
+      const { error: errTan } = await supabase
+        .from("users")
+        .update({ tan: user.tan - TAN_COST })
+        .eq("uid", user.uid);
 
-      if (error) throw error;
+      if (errTan) throw errTan;
 
-      showRZ("✅ Soumis.\nAnalyse IA + Administration.");
+      // Enregistrement
+      const { error: errInsert } = await supabase.from("suspentz").insert({
+        title,
+        video_url: uploadUrl,
+        author_uid: user.uid,
+        author_email: user.email,
+        duration_seconds: 0,
+        tan_cost: TAN_COST,
+        status: "pending",
+        created_at: new Date(),
+      });
+
+      if (errInsert) throw errInsert;
+
+      showRZ("SUSPENTZ envoyé — Analyse IA + administration.");
 
       setVideo(null);
       setTitle("");
       setProgress(0);
 
+      refreshUser();
+
+      setTimeout(() => router.push("/dashboard"), 1200);
+
     } catch (err: any) {
       console.log("UPLOAD ERROR:", err);
-      showRZ(err?.message || "Erreur inconnue. Voir console.");
+      showRZ(err?.message || "Erreur inconnue.");
     }
 
     setUploading(false);
   }
+
 
   return (
     <View style={{ flex: 1 }} {...panResponder.panHandlers}>
@@ -173,31 +207,15 @@ export default function UploadSuspentz() {
           <Image source={require("../assets/images/rhazn-logo.png")} style={styles.logo} />
         </TouchableOpacity>
 
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={{ flex: 1 }}
+        >
           <ScrollView contentContainerStyle={{ paddingTop: 120 }} keyboardShouldPersistTaps="handled">
 
             <Text style={styles.codeTitle}>Publier un SUSPENTZ</Text>
 
-            {/* CODE LIST */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.codeScroll}>
-              {Array.from({ length: 50 }).map((_, i) => (
-                <TouchableOpacity
-                  key={i}
-                  style={styles.codeCard}
-                  onPress={() =>
-                    router.push({
-                      pathname: "/codeVideo",
-                      params: { code: i + 1, video: codeVideos[i + 1] }
-                    })
-                  }
-                >
-                  <Text style={styles.codeCardTitle}>CODE-{i + 1}</Text>
-                  <Text style={styles.codeCardSub}>Hebdo</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            {/* Active CODE */}
+            {/* Code Hebdo */}
             <TouchableOpacity
               style={styles.activeCard}
               onPress={() =>
@@ -207,7 +225,7 @@ export default function UploadSuspentz() {
                 })
               }
             >
-              <Text style={styles.activeCardTitle}>En cours : CODE-{activeCode}</Text>
+              <Text style={styles.activeCardTitle}>CODE-{activeCode} Hebdo</Text>
             </TouchableOpacity>
 
             {/* Panel */}
@@ -230,7 +248,7 @@ export default function UploadSuspentz() {
                 <Text style={styles.selectText}>Sélectionner une vidéo</Text>
               </TouchableOpacity>
 
-              {video && <Text style={styles.fileName}>✅ Vidéo sélectionnée</Text>}
+              {video && <Text style={styles.fileName}>Vidéo sélectionnée</Text>}
               {uploading && (
                 <>
                   <ActivityIndicator size="large" color="#FFD700" />
@@ -239,65 +257,40 @@ export default function UploadSuspentz() {
               )}
 
               <TouchableOpacity style={styles.publishBtn} onPress={submit}>
-                <Text style={styles.publishText}>Soumettre pour validation</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity onPress={() => setRulesVisible(true)} style={styles.infoButton}>
-                <Ionicons name="information-circle" size={24} color="#777" />
+                <Text style={styles.publishText}>Publier le SUSPENTZ</Text>
               </TouchableOpacity>
 
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
 
-        {/* ALERT */}
+
+        {/* ALERT RHAZN */}
         {rzVisible && (
-          <Animated.View style={{
-            position: "absolute",
-            top: "18%",
-            left: 16,
-            right: 16,
-            opacity: rzOpacity,
-            transform: [{ translateY: rzY }],
-            zIndex: 1000
-          }}>
+          <Animated.View
+            style={{
+              position: "absolute",
+              top: "18%",
+              left: 16,
+              right: 16,
+              opacity: rzOpacity,
+              transform: [{ translateY: rzY }],
+              zIndex: 1000
+            }}
+          >
             <View style={styles.alertBox}>
               <Text style={styles.alertText}>{rzMsg}</Text>
             </View>
           </Animated.View>
         )}
 
-        {/* RULES MODAL */}
-        <Modal visible={rulesVisible} transparent animationType="fade">
-          <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setRulesVisible(false)}>
-            <TouchableOpacity style={styles.rulesBox} activeOpacity={1}>
-              <ScrollView showsVerticalScrollIndicator={false}>
-                <Text style={styles.rulesTitle}>Règlements SUSPENTZ</Text>
-                {[
-                  "Max 125 sec",
-                  "Naturel + moral",
-                  "Code hebdo respecté",
-                  "Pas de mise en scène",
-                  "Pas de bijoux / filtre / maquillage",
-                  "Pas de vulgarité",
-                  "Originalité absolue",
-                ].map((r, i) => (
-                  <Text key={i} style={styles.rule}>• {r}</Text>
-                ))}
-              </ScrollView>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </Modal>
-
       </View>
     </View>
   );
-}
+};
+
 
 /* STYLES */
-const CARD_W = 140;
-const CARD_H = 180;
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
   header: { position: "absolute", top: 42, right: 20, zIndex: 50 },
@@ -305,17 +298,8 @@ const styles = StyleSheet.create({
 
   codeTitle: { textAlign: "center", fontSize: 22, fontWeight: "800", color: "#FFD700", marginBottom: 16 },
 
-  codeScroll: { paddingHorizontal: 16, gap: 14 },
-  codeCard: {
-    width: CARD_W, height: CARD_H, backgroundColor: "#0f0f0f",
-    borderRadius: 16, borderWidth: 1, borderColor: "#222",
-    justifyContent: "center", alignItems: "center"
-  },
-  codeCardTitle: { color: "#FFD700", fontSize: 18, fontWeight: "700" },
-  codeCardSub: { color: "#777", fontSize: 12 },
-
   activeCard: {
-    width: CARD_W * 2, height: CARD_H * 0.35,
+    width: 220, height: 60,
     backgroundColor: "#0b0b0b",
     borderRadius: 18, borderWidth: 1, borderColor: "#1f3b1f",
     alignSelf: "center", marginTop: 18, marginBottom: 10,
@@ -358,8 +342,6 @@ const styles = StyleSheet.create({
   publishBtn: { backgroundColor: "#FFD700", paddingVertical: 14, borderRadius: 10 },
   publishText: { textAlign: "center", color: "#000", fontWeight: "800", fontSize: 16 },
 
-  infoButton: { marginTop: 12, alignSelf: "flex-end" },
-
   alertBox: {
     backgroundColor: "#0b0b0b",
     borderWidth: 1, borderColor: "#FFD70020",
@@ -372,12 +354,4 @@ const styles = StyleSheet.create({
   },
   alertText: { color: "#FFD700", fontSize: 17, fontWeight: "700", textAlign: "center" },
 
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: 20 },
-  rulesBox: {
-    backgroundColor: "#111", padding: 18,
-    borderRadius: 18, borderWidth: 1, borderColor: "#222",
-    maxHeight: "75%"
-  },
-  rulesTitle: { color: "#FFD700", fontSize: 18, fontWeight: "800", marginBottom: 10 },
-  rule: { color: "#ddd", fontSize: 14, marginBottom: 6 }
 });

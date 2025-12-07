@@ -3,14 +3,14 @@ import * as NavigationBar from "expo-navigation-bar";
 import { useRouter } from "expo-router";
 import { useEffect, useRef } from "react";
 import {
-    Animated,
-    Easing,
-    Image,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Animated,
+  Easing,
+  Image,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from "react-native";
 
 import AdminGuard from "../../components/admin/AdminGuard";

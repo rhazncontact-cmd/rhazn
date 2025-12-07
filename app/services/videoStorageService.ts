@@ -1,6 +1,6 @@
 import { decode } from "base64-arraybuffer";
 import * as FileSystem from "expo-file-system";
-import { supabase } from "../supabase"; // 👈 ton client Supabase
+import { supabase } from "../../lib/supabase"; // 👈 ton client Supabase
 
 export async function uploadFluxVideo(uri, onProgress, title, code) {
   try {

@@ -1,19 +1,18 @@
-import { Feather, Ionicons } from "@expo/vector-icons";
+import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Animated,
-    Image,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Animated,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
-import { collection, getDocs } from "firebase/firestore";
-import { db } from "../firebase"; // 🔥 FIREBASE
+import { supabase } from "../lib/supabase"; // 🔥 SUPABASE
 
 export default function VideoInfos() {
   const router = useRouter();
@@ -31,18 +30,23 @@ export default function VideoInfos() {
     }).start();
   }, []);
 
-  /** 🔥 Charger vidéos depuis Firestore */
+  /** 🔥 Charger vidéos depuis Supabase */
   const loadVideos = async () => {
     try {
-      const snap = await getDocs(collection(db, "videos"));
-      const list = snap.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setVideos(list);
-    } catch (error) {
-      console.log("Erreur Firestore:", error);
+      const { data, error } = await supabase
+        .from("videos_infos") // 👈 Remplace par ta table réelle
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.log("Erreur Supabase:", error);
+      } else {
+        setVideos(data || []);
+      }
+    } catch (e) {
+      console.log("Erreur:", e);
     }
+
     setLoading(false);
   };
 
@@ -52,13 +56,11 @@ export default function VideoInfos() {
 
   return (
     <Animated.View style={[styles.container, { opacity: fade }]}>
-      
       {/* 🔥 HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={26} color="#FFD700" />
-        </TouchableOpacity>
+        {/* ✅ FLÈCHE SUPPRIMÉE */}
 
+        {/* ✅ TITRE DESCENDU + ALIGNÉ À GAUCHE */}
         <Text style={styles.headerTitle}>Vidéos d’Information</Text>
 
         <TouchableOpacity onPress={() => router.push("/dashboard")}>
@@ -83,13 +85,14 @@ export default function VideoInfos() {
           <ActivityIndicator size="large" color="#FFD700" style={{ marginTop: 60 }} />
         )}
 
-        {/* 🔥 LISTE DES VIDÉOS */}
+        {/* 🔥 LISTE VIDE */}
         {!loading && videos.length === 0 && (
           <Text style={{ color: "#777", textAlign: "center", marginTop: 20 }}>
             Aucune vidéo officielle n’est disponible.
           </Text>
         )}
 
+        {/* 🔥 LISTE VIDÉOS */}
         {!loading &&
           videos.map((v) => (
             <TouchableOpacity
@@ -116,12 +119,9 @@ export default function VideoInfos() {
 
               <View style={{ flex: 1 }}>
                 <Text style={styles.videoTitle}>{v.title}</Text>
-                
-                {v.desc ? (
-                  <Text style={styles.videoDesc}>{v.desc}</Text>
-                ) : (
-                  <Text style={styles.videoDesc}>Vidéo officielle RHAZN</Text>
-                )}
+                <Text style={styles.videoDesc}>
+                  {v.desc || "Vidéo officielle RHAZN"}
+                </Text>
               </View>
 
               <Feather name="play-circle" size={28} color="#FFD700" />
@@ -136,7 +136,8 @@ export default function VideoInfos() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
 
-  scroll: { paddingTop: 110, paddingHorizontal: 20, paddingBottom: 40 },
+  // ✅ SCROLL DESCENDU (était 110)
+  scroll: { paddingTop: 125, paddingHorizontal: 20, paddingBottom: 40 },
 
   header: {
     position: "absolute",
@@ -150,7 +151,15 @@ const styles = StyleSheet.create({
 
   logo: { width: 40, height: 40, resizeMode: "contain" },
 
-  headerTitle: { color: "#FFD700", fontSize: 18, fontWeight: "bold" },
+  // ✅ TITRE ALIGNÉ À GAUCHE + UN ESPACE PLUS BAS
+  headerTitle: {
+    color: "#FFD700",
+    fontSize: 18,
+    fontWeight: "bold",
+    marginTop: 8,    // ✅ DESCENDU D’UN ESPACE
+    textAlign: "left",
+    flex: 1,
+  },
 
   introBox: {
     backgroundColor: "#111",

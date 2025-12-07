@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
 import Animated, {
   FadeInUp,
@@ -10,12 +10,55 @@ import Animated, {
   withSequence,
   withTiming,
 } from "react-native-reanimated";
+import { supabase } from "../lib/supabase";
 
 export default function FluxIntro() {
   const router = useRouter();
   const scale = useSharedValue(1);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // ============================
+  // 🔐 VÉRIFICATION LÉGALE AVANT ACCÈS
+  // ============================
   useEffect(() => {
+    const checkAccess = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      // 🚫 Pas de session → retour auth
+      if (!user) {
+        router.replace("/auth");
+        return;
+      }
+
+      // 🔐 Vérification acceptation contrat
+      const { data, error } = await supabase
+        .from("users")
+        .select("contract_accepted")
+        .eq("uid", user.id)
+        .single();
+
+      if (error || !data?.contract_accepted) {
+        router.replace("/legal/contract");
+        return;
+      }
+
+      // ✅ Lancement animation + redirection normale
+      startIntro();
+    };
+
+    checkAccess();
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  // ============================
+  // 🎬 ANIMATIONS + REDIRECTION
+  // ============================
+  const startIntro = () => {
     // 💫 Pulsation douce
     scale.value = withRepeat(
       withSequence(
@@ -27,22 +70,26 @@ export default function FluxIntro() {
     );
 
     // ⏳ Redirection après 10 secondes
-    const timer = setTimeout(() => {
+    timerRef.current = setTimeout(() => {
       runOnJS(router.replace)("/rz-roles");
     }, 10000);
-
-    return () => clearTimeout(timer);
-  }, []);
+  };
 
   const animatedLogo = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
 
+  // ============================
+  // ✅ UI
+  // ============================
+
   return (
     <View style={styles.container}>
-
       {/* ✅ Logo raisin pulsant */}
-      <Animated.View style={[styles.logoContainer, animatedLogo]} entering={FadeInUp.duration(1200).delay(600)}>
+      <Animated.View
+        style={[styles.logoContainer, animatedLogo]}
+        entering={FadeInUp.duration(1200).delay(600)}
+      >
         <Image
           source={require("@/assets/images/grape.png")}
           style={styles.logo}
@@ -52,27 +99,32 @@ export default function FluxIntro() {
 
       {/* ✅ Titre */}
       <Animated.View entering={FadeInUp.duration(1200).delay(900)}>
-        <Text style={styles.title}>Bienvenue le menu principal</Text>
+        <Text style={styles.title}>Bienvenue dans le menu principal</Text>
       </Animated.View>
 
       {/* ✅ Texte 1 */}
       <Animated.View entering={FadeInUp.duration(1200).delay(1500)}>
-        <Text style={styles.subtitle}>Ici, chaque regard est un investissement inestimable.</Text>
+        <Text style={styles.subtitle}>
+          Ici, chaque regard est un investissement inestimable.
+        </Text>
       </Animated.View>
 
       {/* ✅ Texte 2 */}
       <Animated.View entering={FadeInUp.duration(1200).delay(2200)}>
-        <Text style={styles.subtitle}>l'avenir se trouve ici</Text>
+        <Text style={styles.subtitle}>L’avenir se trouve ici.</Text>
       </Animated.View>
 
       {/* ✅ Signature */}
       <Animated.View entering={FadeInUp.duration(1200).delay(3000)}>
-        <Text style={styles.signature}>Bienvenue chez vouz.</Text>
+        <Text style={styles.signature}>Bienvenue chez vous.</Text>
       </Animated.View>
-
     </View>
   );
 }
+
+// ============================
+// 🎨 STYLES
+// ============================
 
 const styles = StyleSheet.create({
   container: {
@@ -81,12 +133,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     padding: 24,
-  },
-  rLogo: {
-    width: 120,
-    height: 120,
-    opacity: 0.9,
-    marginBottom: 10,
   },
   logoContainer: {
     marginBottom: 25,

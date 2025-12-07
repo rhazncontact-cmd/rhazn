@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import { Lock } from "lucide-react-native";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Image,
   KeyboardAvoidingView,
@@ -13,7 +13,24 @@ import {
   View,
 } from "react-native";
 
+import * as Device from "expo-device";
+import * as LocalAuthentication from "expo-local-authentication";
+
 import { supabase } from "../../lib/supabase";
+import LoaderRhazn from "../components/LoaderRhazn";
+
+// ===============================
+// 🎨 COULEURS RHAZN — APPLE TYPE
+// ===============================
+const COLORS = {
+  black: "#000000",
+  white: "#FFFFFF",
+  gray: "#AFAFAF",
+  darkGray: "#121212",
+  green: "#00C853",
+  crimson: "#D32F2F",
+  gold: "#D4AF37",
+};
 
 type AlertState =
   | {
@@ -25,72 +42,227 @@ type AlertState =
 
 export default function LoginScreen() {
   const router = useRouter();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [deviceId, setDeviceId] = useState("");
+
   const [alert, setAlert] = useState<AlertState>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setDeviceId(`${Device.osName}-${Device.osVersion}-${Device.modelId}`);
+  }, []);
+
+  const showAlert = (
+    title: string,
+    message: string,
+    type: "error" | "success" = "error"
+  ) => {
+    setAlert({ type, title, message });
+    setLoading(false);
+  };
+
+  const showNetError = () => {
+    showAlert(
+      "Connexion requise",
+      "Vérifiez votre connexion internet pour continuer."
+    );
+  };
 
   // ============================================================================
-  // 🔐 LOGIN AVEC SUPABASE AUTH
+  // 🔥 AUTO-CREATION WALLET UTILISATEUR
   // ============================================================================
-  const handleLogin = async () => {
-    if (!email || !password) {
-      setAlert({
-        type: "error",
-        title: "Champs manquants",
-        message: "Veuillez remplir tous les champs.",
-      });
-      return;
-    }
-
+  const ensureUserWallet = async (uid: string) => {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim().toLowerCase(),
-        password: password,
+      const { data: existingWallet } = await supabase
+        .from("users_wallet")
+        .select("id")
+        .eq("user_uid", uid)
+        .maybeSingle();
+
+      if (existingWallet) return true;
+
+      const { error } = await supabase.from("users_wallet").insert({
+        user_uid: uid,
+        tan: 0,
+        acset: 0,
       });
 
-      if (error) {
-        setAlert({
-          type: "error",
-          title: "Erreur de connexion",
-          message:
-            error.message === "Invalid login credentials"
-              ? "Identifiants incorrects."
-              : "Impossible de vous connecter.",
-        });
-        return;
-      }
-
-      // 🎉 SUCCESS : l’utilisateur est bien connecté
-      setAlert({
-        type: "success",
-        title: "Connexion réussie",
-        message: "Bienvenue dans l’espace RHAZN.",
-      });
-
-      setTimeout(() => {
-        setAlert(null);
-        router.replace("/flux-intro");
-      }, 900);
-    } catch (e) {
-      console.log("SUPABASE_LOGIN_ERROR:", e);
-      setAlert({
-        type: "error",
-        title: "Erreur inattendue",
-        message: "Impossible de vous connecter. Réessayez.",
-      });
+      if (error) return false;
+      return true;
+    } catch {
+      return false;
     }
   };
 
   // ============================================================================
-  // UI
+  // 🔐 LOGIN PREMIUM RHAZN — VERSION SÉCURISÉE & INTELLIGENTE
+  // ============================================================================
+  const handleLogin = async () => {
+    if (loading) return;
+    setLoading(true);
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (!cleanEmail || !password) {
+      return showAlert(
+        "Champs manquants",
+        "Veuillez entrer votre adresse e-mail et votre mot de passe."
+      );
+    }
+
+    try {
+      // 1️⃣ Vérifier si l'email existe
+      const { data: existingUser, error: userCheckError } = await supabase
+        .from("users")
+        .select("uid")
+        .eq("email", cleanEmail)
+        .maybeSingle();
+
+      if (userCheckError) {
+        if (userCheckError.message.includes("Network request failed")) {
+          return showNetError();
+        }
+      }
+
+      if (!existingUser) {
+        return showAlert(
+          "E-mail non inscrit",
+          "Cet e-mail n’est pas encore inscrit. Veuillez cliquer sur « Créer un compte » pour vous enregistrer."
+        );
+      }
+
+      // 2️⃣ Auth Supabase
+      const { error: loginErr } =
+        await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password,
+        });
+
+      if (loginErr) {
+        if (loginErr.message.includes("Invalid login credentials")) {
+          return showAlert(
+            "Identifiants incorrects",
+            "Le mot de passe est incorrect. Veuillez réessayer."
+          );
+        }
+
+        if (loginErr.message.includes("Email not confirmed")) {
+          return showAlert(
+            "Compte non activé",
+            "Votre compte n’a pas encore été activé via le code RHAZN."
+          );
+        }
+
+        if (loginErr.message.includes("Network request failed")) {
+          return showNetError();
+        }
+
+        return showAlert(
+          "Connexion impossible",
+          "Erreur serveur. Veuillez réessayer."
+        );
+      }
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      const session = sessionData?.session;
+      if (!session) return showAlert("Erreur", "Session introuvable.");
+
+      const userId = session.user.id;
+
+      const { data: userData } = await supabase
+        .from("users")
+        .select("*")
+        .eq("uid", userId)
+        .maybeSingle();
+
+      if (!userData) {
+        await supabase.from("users").insert({
+          uid: userId,
+          email: cleanEmail,
+          tan: 0,
+          role: "user",
+          device_id: deviceId,
+        });
+      }
+
+      if (userData?.device_id && userData.device_id !== deviceId) {
+        return showAlert(
+          "Appareil non autorisé",
+          "Ce compte est déjà lié à un autre appareil."
+        );
+      }
+
+      const walletOK = await ensureUserWallet(userId);
+      if (!walletOK) {
+        return showAlert(
+          "Erreur portefeuille",
+          "Impossible de charger votre portefeuille RHAZN."
+        );
+      }
+
+      showAlert("Connexion réussie", "Bienvenue dans RHAZN.", "success");
+
+      setTimeout(() => {
+        setAlert(null);
+        router.replace("/contract");
+      }, 900);
+    } catch (err: any) {
+      if (String(err?.message || "").includes("Network request failed")) {
+        showNetError();
+      } else {
+        showAlert(
+          "Erreur critique",
+          "Une erreur inattendue s'est produite. Veuillez réessayer."
+        );
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ============================================================================
+  // 🔒 BIOMÉTRIE
+  // ============================================================================
+  const handleBiometricsLogin = async () => {
+    try {
+      const supported = await LocalAuthentication.hasHardwareAsync();
+      if (!supported)
+        return showAlert(
+          "Indisponible",
+          "Votre appareil ne supporte pas la biométrie."
+        );
+
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: "Connexion sécurisée RHAZN",
+      });
+
+      if (!result.success)
+        return showAlert("Échec", "Authentification annulée.");
+
+      const { data } = await supabase.auth.getSession();
+      if (!data.session)
+        return showAlert(
+          "Première connexion requise",
+          "Veuillez vous connecter une première fois avec votre mot de passe."
+        );
+
+      router.replace("/flux-intro");
+    } catch {
+      showAlert("Erreur", "Impossible d’utiliser la biométrie.");
+    }
+  };
+
+  // ============================================================================
+  // UI — APPLE TYPE PREMIUM
   // ============================================================================
   return (
     <KeyboardAvoidingView
       behavior="padding"
-      keyboardVerticalOffset={Platform.OS === "ios" ? 60 : 40}
-      style={{ flex: 1, backgroundColor: "#000" }}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 40}
+      style={{ flex: 1, backgroundColor: COLORS.black }}
     >
-      {/* Logo en haut à droite */}
       <View style={styles.logoWrapper}>
         <Image
           source={require("../../assets/images/rhazn-logo.png")}
@@ -98,63 +270,99 @@ export default function LoginScreen() {
         />
       </View>
 
-      <ScrollView
-        contentContainerStyle={styles.container}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
+      <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.inner}>
-          <Lock color="#FFD700" size={40} style={{ marginBottom: 16 }} />
+          <Lock color={COLORS.white} size={34} style={{ marginBottom: 18 }} />
 
           <Text style={styles.title}>Connexion</Text>
-          <Text style={styles.subtitle}>Accès réservé aux membres RHAZN</Text>
+          <Text style={styles.subtitle}>
+            Accédez à l’univers sécurisé RHAZN
+          </Text>
 
           <TextInput
             placeholder="Adresse e-mail"
-            placeholderTextColor="#777"
+            placeholderTextColor={COLORS.gray}
             value={email}
             onChangeText={setEmail}
             style={styles.input}
-            keyboardType="email-address"
             autoCapitalize="none"
           />
 
           <TextInput
             placeholder="Mot de passe"
-            placeholderTextColor="#777"
+            placeholderTextColor={COLORS.gray}
             secureTextEntry
             value={password}
             onChangeText={setPassword}
             style={styles.input}
           />
 
-          <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-            <Text style={styles.loginText}>Se connecter</Text>
+          {loading ? (
+            <LoaderRhazn />
+          ) : (
+            <TouchableOpacity
+              style={styles.loginButton}
+              onPress={handleLogin}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.loginText}>Se connecter</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity onPress={handleBiometricsLogin}>
+            <Text style={[styles.linkText, { marginTop: 18 }]}>
+              Face ID / Empreinte digitale
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity onPress={() => router.push("/auth/register")}>
-            <Text style={styles.linkText}>
+            <Text style={[styles.linkText, { marginTop: 26 }]}>
               Pas encore membre ? Créez un compte
             </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
 
-      {/* 🔥 ALERTE PREMIUM RHAZN */}
       {alert && (
         <View
           style={[
             styles.alertContainer,
-            alert.type === "error" ? styles.alertError : styles.alertSuccess,
+            {
+              borderColor:
+                alert.type === "error" ? COLORS.crimson : COLORS.green,
+            },
           ]}
         >
-          <View style={styles.alertBar} />
+          <View
+            style={[
+              styles.alertBar,
+              {
+                backgroundColor:
+                  alert.type === "error"
+                    ? COLORS.crimson
+                    : COLORS.green,
+              },
+            ]}
+          />
           <View style={{ flex: 1 }}>
             <Text style={styles.alertTitle}>{alert.title}</Text>
             <Text style={styles.alertMessage}>{alert.message}</Text>
           </View>
+
           <TouchableOpacity onPress={() => setAlert(null)}>
-            <Text style={styles.alertClose}>✕</Text>
+            <Text
+              style={[
+                styles.alertClose,
+                {
+                  color:
+                    alert.type === "error"
+                      ? COLORS.crimson
+                      : COLORS.green,
+                },
+              ]}
+            >
+              ✕
+            </Text>
           </TouchableOpacity>
         </View>
       )}
@@ -162,122 +370,106 @@ export default function LoginScreen() {
   );
 }
 
+// ============================================================================
+// STYLES — APPLE TYPE PREMIUM
+// ============================================================================
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
-    backgroundColor: "#000",
+    padding: 28,
     justifyContent: "center",
-    padding: 24,
   },
   inner: {
     alignItems: "center",
+    marginTop: 110,
   },
-
-  // Logo top-right
   logoWrapper: {
     position: "absolute",
-    top: 35,
-    right: 24,
-    zIndex: 10,
+    top: 42,
+    right: 26,
+    zIndex: 20,
   },
   logo: {
-    width: 46,
-    height: 46,
+    width: 48,
+    height: 48,
     resizeMode: "contain",
   },
-
   title: {
-    color: "#fff",
-    fontSize: 28,
-    fontWeight: "700",
-    marginBottom: 6,
-    textAlign: "center",
+    color: COLORS.white,
+    fontSize: 30,
+    fontWeight: "800",
   },
   subtitle: {
-    color: "#bbb",
+    color: COLORS.gray,
     fontSize: 14,
-    marginBottom: 28,
-    textAlign: "center",
+    marginBottom: 36,
   },
   input: {
     width: "100%",
-    backgroundColor: "#111",
-    color: "#fff",
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    backgroundColor: COLORS.darkGray,
+    color: COLORS.white,
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
     fontSize: 15,
-    marginBottom: 14,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#222",
+    borderColor: "#1f1f1f",
   },
   loginButton: {
-    backgroundColor: "#FFD700",
+    backgroundColor: COLORS.gold,
     width: "100%",
-    borderRadius: 10,
-    paddingVertical: 14,
-    marginTop: 10,
+    borderRadius: 999,
+    paddingVertical: 16,
+    marginTop: 6,
+    shadowColor: "#000",
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 8,
   },
   loginText: {
-    textAlign: "center",
-    color: "#000",
+    color: COLORS.black,
     fontWeight: "700",
     fontSize: 16,
-  },
-  linkText: {
-    color: "#FFD700",
-    marginTop: 20,
-    fontSize: 14,
-    fontWeight: "500",
     textAlign: "center",
   },
-
-  // Alert premium RHAZN
+  linkText: {
+    color: COLORS.white,
+    fontSize: 14,
+    opacity: 0.75,
+    textAlign: "center",
+  },
   alertContainer: {
     position: "absolute",
     left: 16,
     right: 16,
-    bottom: 26,
+    bottom: 38,
     backgroundColor: "#0b0b0b",
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    borderRadius: 18,
+    padding: 14,
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
-    shadowColor: "#000",
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
   },
   alertBar: {
     width: 4,
     height: "100%",
     borderRadius: 999,
     marginRight: 10,
-    backgroundColor: "#FFD700",
-  },
-  alertError: {
-    borderColor: "#f97373",
-  },
-  alertSuccess: {
-    borderColor: "#4ade80",
   },
   alertTitle: {
-    color: "#fff",
+    color: COLORS.white,
     fontWeight: "700",
     fontSize: 14,
-    marginBottom: 2,
   },
   alertMessage: {
-    color: "#ddd",
+    color: "#ccc",
     fontSize: 12,
+    marginTop: 4,
   },
   alertClose: {
-    color: "#888",
-    fontSize: 16,
-    marginLeft: 10,
     fontWeight: "700",
+    fontSize: 16,
+    paddingHorizontal: 10,
   },
 });

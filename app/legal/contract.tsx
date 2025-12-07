@@ -120,7 +120,7 @@ export default function ContractScreen() {
     <View style={styles.full}>
       {/* ✅ EN-TÊTE FLOTTANT */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Contrat Utilisateur</Text>
+        <Text style={styles.headerTitle}>Conditions Générales d’Utilisation – RHAZN</Text>
         <Text style={styles.headerLogo}>RHAZN</Text>
       </View>
 
@@ -229,8 +229,8 @@ export default function ContractScreen() {
             color={checked ? COLORS.green : undefined}
           />
           <Text style={styles.checkboxText}>
-            Je reconnais avoir lu, compris et accepté l’intégralité des présentes
-            conditions contractuelles.
+            Je reconnais expressément avoir lu, compris et accepté, sans réserve,
+            l’intégralité des Conditions Générales d’Utilisation de RHAZN.
           </Text>
         </View>
       </ScrollView>
@@ -252,11 +252,11 @@ export default function ContractScreen() {
               styles.button,
               { backgroundColor: checked ? COLORS.green : COLORS.dark },
             ]}
-            onPress={checked ? handleAccept : () => router.replace("/auth/login")}
+            onPress={checked ? handleAccept : () => router.replace("/legal/signature")}
             activeOpacity={0.85}
           >
             <Text style={styles.buttonText}>
-              {checked ? "J’ACCEPTE ET J’ENTRE DANS RHAZN" : "JE DÉCLINE"}
+              {checked ? "REJOINDRE L’ÉCOSYSTÈME RHAZN" : "RENONCER À L’INSCRIPTION"}
             </Text>
           </TouchableOpacity>
         )}

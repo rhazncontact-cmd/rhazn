@@ -1,8 +1,11 @@
-import { Feather, Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 import * as NavigationBar from "expo-navigation-bar";
 import { useRouter } from "expo-router";
+import * as ScreenCapture from "expo-screen-capture";
 import React, { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   Animated,
   Easing,
   Image,
@@ -14,31 +17,56 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 
-// ✅ RZ Communication Footer
+import { useWallet } from "../context/WalletContext";
+import { supabase } from "../lib/supabase";
 import RZBottomSheet from "./components/RZBottomSheet";
+
+const MIN_TAN_PUBLISH = 250;
+const MAX_SUSPENTZ_PER_WEEK = 5;
+
+type ModalMode = "info" | "lowTan" | "limit" | "confirm";
 
 export default function PublierSuspentz() {
   const router = useRouter();
-  const [modalVisible, setModalVisible] = useState(false);
+  const { tanBalance, weeklySuspentzCount } = useWallet() as any;
 
+  const currentTan = Number(tanBalance ?? 0);
+  const weeklyCount = Number(weeklySuspentzCount ?? 0);
+
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalText, setModalText] = useState("");
+  const [modalMode, setModalMode] = useState<ModalMode>("info");
+
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [video, setVideo] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  // 🔒 Bloc capture écran
   useEffect(() => {
-    NavigationBar.setVisibilityAsync("hidden");
-    NavigationBar.setBehaviorAsync("overlay-swipe");
+    ScreenCapture.preventScreenCaptureAsync().catch(() => {});
+    return () => {
+      ScreenCapture.allowScreenCaptureAsync().catch(() => {});
+    };
   }, []);
 
-  // 🔙 Swipe gauche uniquement pour revenir
+  useEffect(() => {
+    NavigationBar.setVisibilityAsync("hidden").catch(() => {});
+    NavigationBar.setBehaviorAsync("overlay-swipe").catch(() => {});
+  }, []);
+
   const panResponder = PanResponder.create({
     onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 25,
     onPanResponderMove: (_, g) => {
       if (g.dx < -100) router.back();
-    }
+    },
   });
 
+  // 🌟 Animation glow
   const glow = useRef(new Animated.Value(0)).current;
-
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
@@ -46,122 +74,180 @@ export default function PublierSuspentz() {
           toValue: 1,
           duration: 1600,
           easing: Easing.inOut(Easing.ease),
-          useNativeDriver: false
+          useNativeDriver: false,
         }),
         Animated.timing(glow, {
           toValue: 0,
           duration: 1600,
           easing: Easing.inOut(Easing.ease),
-          useNativeDriver: false
-        })
+          useNativeDriver: false,
+        }),
       ])
     ).start();
   }, []);
 
   const glowColor = glow.interpolate({
     inputRange: [0, 1],
-    outputRange: ["#D4AF37", "#F8E48C"]
+    outputRange: ["#D4AF37", "#F8E48C"],
   });
 
-  // 📌 Types de SUSPENTZ (PACT)
-  const categories = [
-    {
-      label: "Flux-Vidéos",
-      subtitle: "Flux-Vidéos",
-      icon: <Ionicons name="film-outline" size={26} color="#D4AF37" />
-    },
-    {
-      label: "Video Clip",
-      subtitle: "Vidéo Clip",
-      icon: <Feather name="video" size={22} color="#4ade80" />
-    },
-    { label: "Lyrics", icon: <Feather name="feather" size={22} color="#D4AF37" /> },
-    { label: "Livres", icon: <Ionicons name="book-outline" size={22} color="#D4AF37" /> },
-    { label: "Mélodies", icon: <Feather name="music" size={22} color="#D4AF37" /> },
-    { label: "Musiques", icon: <Ionicons name="headset-outline" size={22} color="#D4AF37" /> },
-    { label: "Arts", icon: <Ionicons name="color-palette-outline" size={22} color="#D4AF37" /> },
-    { label: "Autres", icon: <Feather name="grid" size={22} color="#D4AF37" /> }
-  ];
+  // 🎥 Sélection vidéo
+  const pickVideo = async () => {
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+      quality: 1,
+    });
+
+    if (!res.canceled) {
+      setVideo(res.assets[0]);
+    }
+  };
+
+  // ✅ Validation puis paiement/upload
+  const handlePublish = async () => {
+    if (!title || !video) {
+      Alert.alert("Erreur", "Titre et vidéo obligatoires.");
+      return;
+    }
+
+    if (currentTan < MIN_TAN_PUBLISH) {
+      setModalMode("lowTan");
+      setModalText("Solde TAN insuffisant.");
+      setModalVisible(true);
+      return;
+    }
+
+    if (weeklyCount >= MAX_SUSPENTZ_PER_WEEK) {
+      setModalMode("limit");
+      setModalText("Limite hebdomadaire atteinte.");
+      setModalVisible(true);
+      return;
+    }
+
+    setModalMode("confirm");
+    setModalText(`Cette publication coûtera ${MIN_TAN_PUBLISH} TAN.`);
+    setModalVisible(true);
+  };
+
+  const confirmPublish = async () => {
+    setModalVisible(false);
+    setLoading(true);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Utilisateur non connecté");
+
+      // 💰 Paiement
+      const { error: payError } = await supabase.rpc("pay_exposure_tan", {
+        p_creator_uid: user.id,
+        p_amount: MIN_TAN_PUBLISH,
+      });
+
+      if (payError) throw payError;
+
+      // ☁️ Upload
+      const ext = video.uri.split(".").pop();
+      const filePath = `suspentz/${user.id}/${Date.now()}.${ext}`;
+
+      const fileObj = {
+        uri: video.uri,
+        name: filePath,
+        type: "video/mp4",
+      } as any;
+
+      const { error: uploadError } = await supabase.storage
+        .from("suspentz_videos")
+        .upload(filePath, fileObj);
+
+      if (uploadError) throw uploadError;
+
+      // 🗃️ Insert DB → CADNA
+      const { error: dbError } = await supabase.from("suspentz").insert({
+        title,
+        description,
+        video_url: filePath,
+        creator_uid: user.id,
+        exposure_pric: MIN_TAN_PUBLISH,
+        status: "pending",
+      });
+
+      if (dbError) throw dbError;
+
+      Alert.alert("Succès", "Contenu envoyé à la CADNA pour validation ✅");
+      setTitle("");
+      setDescription("");
+      setVideo(null);
+      router.push("/my-pacts");
+    } catch (err: any) {
+      Alert.alert("Erreur", err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <View style={styles.container} {...panResponder.panHandlers}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
-      {/* HEADER */}
       <View style={styles.header}>
-        <Text style={styles.title}>Publier un SUSPENTZ</Text>
-
-        <TouchableOpacity onPress={() => router.push("/dashboard")}>
-          <Image
-            source={require("../assets/images/rhazn-logo.png")}
-            style={{ width: 60, height: 60, resizeMode: "contain" }}
-          />
-        </TouchableOpacity>
+        <View>
+          <Text style={styles.title}>Publier un SUSPENTZ</Text>
+          <Text style={styles.subHeader}>Solde TAN : {currentTan}</Text>
+          <Text style={styles.subRule}>Coût : {MIN_TAN_PUBLISH} TAN</Text>
+        </View>
+        <Image source={require("../assets/images/rhazn-logo.png")} style={{ width: 60, height: 60 }} />
       </View>
 
-      <ScrollView
-        contentContainerStyle={{ paddingBottom: 150, paddingTop: 120 }}
-      >
-
-        {/* BARRE DE RECHERCHE */}
-        <TouchableOpacity onPress={() => router.push("/search")}>
-          <View style={styles.SearchBar}>
-            <Feather name="search" size={20} color="#888" />
-            <TextInput
-              placeholder="Rechercher un style ou format de SUSPENTZ"
-              placeholderTextColor="#777"
-              style={styles.input}
-              editable={false}
-            />
-          </View>
-        </TouchableOpacity>
-
-        <Text style={styles.sectionTitle}>Sélectionner le type de SUSPENTZ</Text>
-
-        <Animated.View
-          style={{
-            height: 2,
-            backgroundColor: glowColor,
-            marginVertical: 30,
-            marginHorizontal: 24,
-            borderRadius: 4
-          }}
+      <ScrollView contentContainerStyle={{ paddingBottom: 200, paddingTop: 130 }}>
+        <TextInput
+          placeholder="Titre"
+          placeholderTextColor="#777"
+          value={title}
+          onChangeText={setTitle}
+          style={styles.input}
         />
 
-        {/* GRID DES TYPE DE SUSPENTZ */}
-        <View style={styles.pactGrid}>
-          {categories.map((item, i) => (
-            <TouchableOpacity
-              key={i}
-              onPress={() => {
-                if (i === 0) {
-                  router.push("/upload-banq"); // 🔥 Nouveau nom
-                } else {
-                  setModalVisible(true);
-                }
-              }}
-              style={styles.featureCard}
-            >
-              <View style={styles.featureIcon}>{item.icon}</View>
-              <Text style={styles.featureLabel}>{item.subtitle ?? item.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        <TextInput
+          placeholder="Description"
+          placeholderTextColor="#777"
+          value={description}
+          onChangeText={setDescription}
+          multiline
+          style={[styles.input, { height: 100 }]}
+        />
+
+        <TouchableOpacity style={styles.uploadBtn} onPress={pickVideo}>
+          <Text style={{ color: "#fff" }}>
+            {video ? "Changer la vidéo" : "Importer la vidéo"}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.publishBtn} onPress={handlePublish}>
+          {loading ? (
+            <ActivityIndicator />
+          ) : (
+            <Text style={styles.publishText}>PAYER → ENVOYER À LA CADNA</Text>
+          )}
+        </TouchableOpacity>
       </ScrollView>
 
-      {/* MODAL COMING SOON */}
+      {/* MODAL */}
       <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
-            <Text style={styles.modalText}>Fonctionnalité bientôt disponible</Text>
+            <Text style={styles.modalText}>{modalText}</Text>
+
+            {modalMode === "confirm" && (
+              <TouchableOpacity style={styles.btnPrimary} onPress={confirmPublish}>
+                <Text style={styles.btnPrimaryText}>CONFIRMER</Text>
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
+              style={styles.btnSecondary}
               onPress={() => setModalVisible(false)}
-              style={styles.quitButton}
             >
-              <Text style={{ fontWeight: "700", textAlign: "center" }}>
-                Quitter
-              </Text>
+              <Text style={styles.btnSecondaryText}>Fermer</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -171,6 +257,8 @@ export default function PublierSuspentz() {
     </View>
   );
 }
+
+/* ========== STYLES ========== */
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
@@ -187,66 +275,48 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    zIndex: 999
+    zIndex: 99,
   },
 
-  title: { fontSize: 28, fontWeight: "700", color: "#D4AF37" },
+  title: { fontSize: 26, fontWeight: "700", color: "#D4AF37" },
+  subHeader: { fontSize: 13, color: "#aaa" },
+  subRule: { fontSize: 12, color: "#777" },
 
-  SearchBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#111",
-    margin: 20,
-    padding: 12,
-    borderRadius: 12,
+  input: {
     borderWidth: 1,
-    borderColor: "#222"
-  },
-
-  input: { color: "#fff", marginLeft: 12, flex: 1 },
-
-  sectionTitle: {
-    fontSize: 18,
+    borderColor: "#333",
+    borderRadius: 10,
+    padding: 12,
     color: "#fff",
-    fontWeight: "600",
-    marginLeft: 20,
-    marginBottom: 10
+    margin: 10,
   },
 
-  pactGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    padding: 20
-  },
-
-  featureCard: {
-    width: "48%",
-    backgroundColor: "#111",
-    paddingVertical: 20,
-    marginBottom: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#222",
-    alignItems: "center"
-  },
-
-  featureIcon: {
+  uploadBtn: {
     backgroundColor: "#222",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: "#333"
+    padding: 14,
+    margin: 10,
+    alignItems: "center",
+    borderRadius: 10,
   },
 
-  featureLabel: { color: "#fff", fontSize: 13, marginBottom: 5 },
+  publishBtn: {
+    backgroundColor: "#D4AF37",
+    padding: 16,
+    margin: 10,
+    borderRadius: 10,
+  },
+
+  publishText: {
+    color: "#000",
+    textAlign: "center",
+    fontWeight: "800",
+  },
 
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.7)",
     justifyContent: "center",
-    alignItems: "center"
+    alignItems: "center",
   },
 
   modalBox: {
@@ -254,23 +324,23 @@ const styles = StyleSheet.create({
     backgroundColor: "#111",
     padding: 20,
     borderRadius: 12,
+  },
+
+  modalText: { color: "#fff", textAlign: "center", marginBottom: 20 },
+
+  btnPrimary: {
+    backgroundColor: "#D4AF37",
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  btnPrimaryText: { color: "#000", textAlign: "center", fontWeight: "700" },
+
+  btnSecondary: {
     borderWidth: 1,
     borderColor: "#444",
-    alignItems: "center"
+    padding: 12,
+    borderRadius: 10,
   },
-
-  modalText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 20,
-    textAlign: "center"
-  },
-
-  quitButton: {
-    width: "70%",
-    backgroundColor: "#FFBC7E",
-    paddingVertical: 12,
-    borderRadius: 10
-  }
+  btnSecondaryText: { color: "#fff", textAlign: "center" },
 });

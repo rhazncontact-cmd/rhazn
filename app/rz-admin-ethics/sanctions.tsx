@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import {
-    Alert,
-    FlatList,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Alert,
+  FlatList,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from "react-native";
 
 import { AdminScreen } from "../../components/admin/AdminUI";

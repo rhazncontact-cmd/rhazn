@@ -1,13 +1,3 @@
-// ================================================
-// RZ-ROLES — Page des rôles RHAZN
-// Logique :
-// ADMIN → code secret (déjà en place)
-// AGENT → code secret
-// UTILISATEUR → redirection selon TAN
-// VIDEO-INFOS → libre
-// APPLY-AGENT → libre
-// ================================================
-
 import { Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import * as NavigationBar from "expo-navigation-bar";
 import { useRouter } from "expo-router";
@@ -26,7 +16,7 @@ import {
   View,
 } from "react-native";
 
-import { supabase } from "../lib/supabase"; // 🔥 Supabase import
+import { supabase } from "../lib/supabase";
 
 export default function RZRoles() {
   const router = useRouter();
@@ -60,15 +50,15 @@ export default function RZRoles() {
   });
 
   // ===============================
-  // 🔥 Navigation immersive
+  // 🔥 Android NavigationBar → toujours visible
   // ===============================
   useEffect(() => {
-    NavigationBar.setVisibilityAsync("hidden");
-    NavigationBar.setBehaviorAsync("overlay-swipe");
+    NavigationBar.setVisibilityAsync("visible").catch(() => {});
+    NavigationBar.setBehaviorAsync("inset-swipe").catch(() => {});
   }, []);
 
   // ===============================
-  // 🔥 Swipe (gauche = back)
+  // 🔥 Swipe → back / exit
   // ===============================
   const panResponder = PanResponder.create({
     onMoveShouldSetPanResponder: (_, g) =>
@@ -80,56 +70,58 @@ export default function RZRoles() {
   });
 
   // ===============================
-  // 🔥 Bouton : UTILISATEUR
-  // Vérifie le TAN
+  // 🔥 USER ACCESS : logic TAN
   // ===============================
   const handleUserAccess = async () => {
-    // Récupérer utilisateur connecté
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { data: auth } = await supabase.auth.getUser();
+    const currentUser = auth?.user;
 
-    if (!user) {
-      return router.push("/auth/login"); 
-    }
+    if (!currentUser) return router.push("/auth/login");
 
-    // Récupérer TAN dans la table users
     const { data, error } = await supabase
       .from("users")
       .select("tan")
-      .eq("uid", user.id)
+      .eq("uid", currentUser.id)
       .single();
 
-    if (error || !data) {
-      return router.push("/no-acset");
-    }
+    if (error || !data) return router.push("/no-acset");
 
     const tan = data.tan ?? 0;
 
-    // Condition RHAZN
-    if (tan >= 100) {
-      router.push("/rz-user-dashboard");
-    } else {
-      router.push("/no-acset");
-    }
+    if (tan >= 100) router.push("/rz-user-dashboard");
+    else router.push("/no-acset");
   };
 
   // ===============================
-  // 🔥 BOUTON AGENT (protégé par code)
+  // 🔥 AGENT
   // ===============================
   const goAgentDashboard = () => {
     router.push("/rz-agent-dashboard");
   };
 
+  // ===============================
+  // 🔥 ADMIN
+  // ===============================
+  const goAdminAccess = () => {
+    router.push("/rz-admin/key");
+  };
+
+  // ===============================
+  // 🔥 UI
+  // ===============================
   return (
     <View style={styles.container} {...panResponder.panHandlers}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+      <StatusBar
+        translucent
+        backgroundColor="transparent"
+        barStyle="light-content"
+      />
 
       {/* HEADER */}
       <View style={styles.header}>
-        <Text style={styles.title}>Wallet</Text>
+        <Text style={styles.title}>Autorisation & Navigation</Text>
 
-        <TouchableOpacity onPress={() => router.push("/dashboard")}>
+        <TouchableOpacity onPress={() => router.push("/rz-user-dashboard")}>
           <Image
             source={require("../assets/images/rhazn-logo.png")}
             style={{ width: 45, height: 45, resizeMode: "contain" }}
@@ -137,21 +129,24 @@ export default function RZRoles() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 140, paddingTop: 150 }}>
-        
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 140, paddingTop: 150 }}
+        showsVerticalScrollIndicator={false}
+      >
         {/* ADMIN CARD */}
         <TouchableOpacity
           style={[styles.balanceCard, { height: 180 }]}
-          onPress={() => router.push("/rz-admin-key")}
+          onPress={goAdminAccess}
         >
           <MaterialIcons name="security" size={60} color="#FFD700" />
           <Text style={styles.adminTitle}>RZ-ADMIN CARD</Text>
-          <Text style={styles.adminSub}>Accès Mérite · Contrôle · Système</Text>
+          <Text style={styles.adminSub}>
+            Accès Mérite · Contrôle · Système
+          </Text>
         </TouchableOpacity>
 
         {/* GRID */}
         <View style={styles.actionGrid}>
-
           {/* AGENT */}
           <FeatureCard
             label="RZ-Agent"
@@ -166,20 +161,19 @@ export default function RZRoles() {
             onPress={handleUserAccess}
           />
 
-          {/* VIDEO-INFOS — pas de code */}
+          {/* VIDEO-INFOS */}
           <FeatureCard
             label="Video-Infos"
             icon={<MaterialIcons name="movie" size={26} color="#F97316" />}
             onPress={() => router.push("/video-infos")}
           />
 
-          {/* APPLY-AGENT — pas de code */}
+          {/* APPLY-AGENT */}
           <FeatureCard
             label="Postuler — Agent RZ"
             icon={<Feather name="user-plus" size={24} color="#D4AF37" />}
             onPress={() => router.push("/apply-agent")}
           />
-
         </View>
 
         {/* Divider animé */}
@@ -211,7 +205,7 @@ function FeatureCard({ label, icon, onPress }) {
 }
 
 /*********************
- * STYLES
+ * STYLES — VERSION FINALE
  *********************/
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
@@ -230,7 +224,12 @@ const styles = StyleSheet.create({
     zIndex: 999,
   },
 
-  title: { fontSize: 28, fontWeight: "700", color: "#D4AF37" },
+  // ✅ TITRE EN BLANC (MODIFICATION APPLIQUÉE)
+  title: {
+    fontSize: 28,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
 
   balanceCard: {
     alignItems: "center",

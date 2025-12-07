@@ -1,19 +1,14 @@
-// app/banq.tsx
-// ✅ BANQ — version renommée
-
-import { AntDesign, Feather, MaterialIcons } from "@expo/vector-icons";
 import { Video } from "expo-av";
-import * as Clipboard from "expo-clipboard";
 import { LinearGradient } from "expo-linear-gradient";
 import * as NavigationBar from "expo-navigation-bar";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Alert,
+  Animated,
   Dimensions,
+  Easing,
   FlatList,
   Image,
-  Modal,
   Platform,
   Pressable,
   StatusBar,
@@ -22,249 +17,422 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import QRCode from "react-native-qrcode-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { supabase } from "../lib/supabase";
 
 const { height, width } = Dimensions.get("window");
 
-// ➖➖➖ VIDÉOS TEST (inchangé) ➖➖➖
-const videos = [
-  { id: "1", file: require("../assets/videos/pact2.mp4"), user: "@visionnaire", avatar: require("../assets/images/avatar1.png"), isMine: true },
-  { id: "2", file: require("../assets/videos/pact4.mp4"), user: "@createur2", avatar: require("../assets/images/avatar2.png"), isMine: true },
-  { id: "3", file: require("../assets/videos/pact1.mp4"), user: "@talent3", avatar: require("../assets/images/avatar3.png"), isMine: true },
-];
+const TAN_PER_SECOND = 1 / 50;
+const GOLD = "#D4AF37";
 
-// ➖➖➖ CONSTANTES ➖➖➖
-const TAN_SECONDS = 50;
-const PACT_MAX_SECONDS = 125;
-const HAITI_UTC_OFFSET_HOURS = -5;
-
-// ➖➖➖ FONCTIONS TEMPS (inchangées) ➖➖➖
-function nowInHaiti() { 
-  const now = new Date(); 
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000; 
-  return new Date(utc + HAITI_UTC_OFFSET_HOURS * 3600 * 1000); 
+// ================= VIDEO URL =================
+function getVideoUrl(v: any): string {
+  if (v.mux_playback_id) return `https://stream.mux.com/${v.mux_playback_id}.m3u8`;
+  if (v.cloudflare_uid)
+    return `https://videodelivery.net/${v.cloudflare_uid}/manifest/video.m3u8`;
+  if (v.video_url?.startsWith("http")) return v.video_url;
+  if (v.video_path)
+    return supabase.storage
+      .from("videos")
+      .getPublicUrl(v.video_path).data.publicUrl;
+  return "";
 }
-
-function isShabbat(d) { 
-  const day = d.getUTCDay(), h = d.getUTCHours(), m = d.getUTCMinutes(); 
-  return (day === 5 && h >= 18) || (day === 6 && h < 17) || (day === 6 && h === 17 && m === 0); 
-}
-
-function isFriday1750(d) { 
-  return d.getUTCDay() === 5 && d.getUTCHours() === 17 && d.getUTCMinutes() === 50; 
-}
-
-function cycleDay(d) { 
-  return ((d.getUTCDate() - 1) % 30) + 1; 
-}
-
-const two = n => (n < 10 ? `0${n}` : `${n}`);
 
 export default function BanqDuMerite() {
-
   const router = useRouter();
-  const [current, setCurrent] = useState(0);
-  const [paused, setPaused] = useState({});
-  const [qob, setQob] = useState({});
-  const [perVideoSeconds, setPerVideoSeconds] = useState({});
-  const [globalSeconds, setGlobalSeconds] = useState(0);
-  const videoRefs = useRef({});
-  const [shareOpen, setShareOpen] = useState(false);
-  const [shareFor, setShareFor] = useState(null);
 
-  // Mode immersive
+  const [videos, setVideos] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [userTan, setUserTan] = useState<number>(0);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const userTanRef = useRef(0);
+
+  const [current, setCurrent] = useState(0);
+  const [paused, setPaused] = useState<{ [id: string]: boolean }>({});
+  const [perVideoSeconds, setPerVideoSeconds] = useState<{ [id: string]: number }>({});
+  const videoRefs = useRef<{ [id: string]: any }>({});
+
+  const [qob, setQob] = useState<{ [id: string]: number }>({});
+
+  // ================= PREMIUM LOW TAN OVERLAY =================
+  const [lowTanVisible, setLowTanVisible] = useState(false);
+  const overlayAnim = useRef(new Animated.Value(0)).current;
+
+  const showLowTanOverlay = () => {
+    setLowTanVisible(true);
+    Animated.timing(overlayAnim, {
+      toValue: 1,
+      duration: 320,
+      easing: Easing.out(Easing.exp),
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const hideLowTanOverlay = () => {
+    Animated.timing(overlayAnim, {
+      toValue: 0,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(() => setLowTanVisible(false));
+  };
+
+  // ================= ANDROID BAR =================
   useEffect(() => {
     if (Platform.OS === "android") {
-      NavigationBar.setBehaviorAsync("inset-swipe");
-      NavigationBar.setVisibilityAsync("hidden");
+      NavigationBar.setVisibilityAsync("hidden").catch(() => {});
     }
   }, []);
 
   const showSystemBars = () => {
-    NavigationBar.setVisibilityAsync("visible");
-    setTimeout(() => NavigationBar.setVisibilityAsync("hidden"), 2000);
+    NavigationBar.setVisibilityAsync("visible").catch(() => {});
+    setTimeout(() => {
+      NavigationBar.setVisibilityAsync("hidden").catch(() => {});
+    }, 2000);
   };
 
-  const quitFeed = () => {
-    const id = videos[current]?.id;
-    if (id && videoRefs.current[id]) videoRefs.current[id]?.pauseAsync?.();
-
-    try { router.back(); }
-    catch { router.push("/explorer"); }
-  };
-
-  // Viewers
-  const [viewers, setViewers] = useState(2385);
+  // ================= LOAD VIDEOS =================
   useEffect(() => {
-    const i = setInterval(() => setViewers(v => Math.max(1, v + (Math.random()>0.5?1:-1))), 1200);
-    return () => clearInterval(i);
+    const load = async () => {
+      const { data } = await supabase
+        .from("suspentz")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      const enriched = (data || []).map((v) => ({
+        ...v,
+        playbackUrl: getVideoUrl(v),
+      }));
+
+      setVideos(enriched);
+
+      const initQ: any = {};
+      enriched.forEach((v) => (initQ[v.id] = v.qob ?? 0));
+      setQob(initQ);
+
+      setLoading(false);
+    };
+    load();
   }, []);
 
-  // Visionnage Timer
+  // ================= LOAD USER =================
   useEffect(() => {
-    const t = setInterval(() => {
-      const d = nowInHaiti();
-      if (isFriday1750(d)) Alert.alert("Repos moral imminent", "Dans 10 minutes.");
-      if (isShabbat(d)) return;
+    const loadUser = async () => {
+      const { data } = await supabase.auth.getUser();
+      const uid = data?.user?.id;
+      if (!uid) return router.replace("/auth/login");
 
-      setGlobalSeconds(s => s + 1);
+      setCurrentUserId(uid);
 
+      const { data: u } = await supabase
+        .from("users")
+        .select("tan")
+        .eq("uid", uid)
+        .single();
+
+      const tan = u?.tan ?? 0;
+      setUserTan(tan);
+      userTanRef.current = tan;
+    };
+    loadUser();
+  }, []);
+
+  // ================= TIMER + BILLING (PREMIUM) =================
+  useEffect(() => {
+    const timer = setInterval(() => {
       const id = videos[current]?.id;
       if (!id || paused[id]) return;
 
-      setPerVideoSeconds(m => {
-        const n = (m[id] ?? 0) + 1;
-        if (n > PACT_MAX_SECONDS) return m;
-        return { ...m, [id]: n };
+      setPerVideoSeconds((s) => {
+        const sec = (s[id] ?? 0) + 1;
+        maybeBillFor(id, sec);
+        return { ...s, [id]: sec };
       });
     }, 1000);
-    return () => clearInterval(t);
-  }, [current, paused]);
 
-  const openShare = id => { setShareFor(id); setShareOpen(true); };
-  const copyLink = async () => { await Clipboard.setStringAsync(`rhazn://banq/${shareFor}`); Alert.alert("Lien copié ✅"); };
+    return () => clearInterval(timer);
+  }, [current, paused, videos]);
 
-  const likeQOB = id => setQob(m => ({ ...m, [id]: (m[id] ?? 0) + 1 }));
+  const maybeBillFor = async (videoId: string, sec: number) => {
+    if (!currentUserId || sec % 10 !== 0) return;
 
-  const togglePause = id => {
-    setPaused(p => {
-      const n = !p[id];
-      const ref = videoRefs.current[id];
-      n ? ref?.pauseAsync?.() : ref?.playAsync?.();
-      return { ...p, [id]: n };
+    const tanToBill = sec * TAN_PER_SECOND;
+
+    // ❌ PLUS ASSEZ DE TAN → OVERLAY PREMIUM + BLOCAGE
+    if (userTanRef.current < tanToBill) {
+      const id = videos[current]?.id;
+      const r = videoRefs.current[id];
+      r?.pauseAsync?.();
+
+      showLowTanOverlay();
+      return;
+    }
+
+    // ✅ FACTURATION NORMALE
+    const newTan = +(userTanRef.current - tanToBill).toFixed(4);
+    userTanRef.current = newTan;
+    setUserTan(newTan);
+
+    await supabase
+      .from("users")
+      .update({ tan: newTan })
+      .eq("uid", currentUserId);
+  };
+
+  // ================= QOB =================
+  const likeQOB = (id: string) => {
+    setQob((m) => {
+      const next = (m[id] ?? 0) + 1;
+      supabase.from("suspentz").update({ qob: next }).eq("id", id);
+      return { ...m, [id]: next };
     });
   };
 
-  const renderItem = ({ item, index }) => {
+  // ================= PAUSE =================
+  const togglePause = (id: string) => {
+    setPaused((p) => {
+      const next = !p[id];
+      const r = videoRefs.current[id];
+      next ? r?.pauseAsync?.() : r?.playAsync?.();
+      return { ...p, [id]: next };
+    });
+  };
+
+  // ================= VIDEO ITEM =================
+  const renderItem = ({ item, index }: any) => {
     const id = item.id;
-    const active = index === current;
     const sec = perVideoSeconds[id] ?? 0;
-    const isPaused = !!paused[id];
-    const day = cycleDay(nowInHaiti());
 
     return (
       <Pressable style={styles.page} onPress={showSystemBars}>
         <Video
-          ref={r => (videoRefs.current[id] = r)}
-          source={item.file}
+          ref={(r) => (videoRefs.current[id] = r)}
+          source={{ uri: item.playbackUrl }}
           style={styles.video}
           resizeMode="cover"
-          shouldPlay={active && !isPaused && !isShabbat(nowInHaiti())}
+          shouldPlay={index === current && !paused[id]}
           isLooping
         />
 
-        <LinearGradient colors={["transparent","rgba(0,0,0,0.75)"]} style={styles.overlay} />
+        <LinearGradient
+          colors={["transparent", "rgba(0,0,0,0.75)"]}
+          style={styles.overlay}
+        />
 
-        <View style={styles.middleRow}>
-          <View style={styles.leftCol}>
-            <Text style={styles.onlineTxt}>Online {viewers}</Text>
-            <Text style={styles.timerTxt}>{sec}s / {PACT_MAX_SECONDS}s</Text>
-            <View style={styles.authorRow}>
-              <Image source={item.avatar} style={styles.avatar} />
-              <Text style={styles.author}>{item.user}</Text>
-            </View>
-          </View>
+        {/* BARRE DE PROGRESSION */}
+        <View style={styles.progressBar}>
+          <View
+            style={[styles.progressFill, { width: `${Math.min(sec, 100)}%` }]}
+          />
+        </View>
 
-          <View style={styles.rightCol}>
+        {/* INFOS BAS */}
+        <View style={styles.bottomRow}>
+          <Text style={styles.tanTxt}>TAN : {userTan.toFixed(2)}</Text>
 
-            <TouchableOpacity onPress={() => likeQOB(id)}>
-              <Text style={styles.qobTxt}>QOB {qob[id] ?? 0}</Text>
-            </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push("/profile")}>
+            <Image
+              source={require("../assets/images/avatar3.png")}
+              style={styles.profileIcon}
+            />
+          </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => togglePause(id)}>
-              <View style={styles.pillBtn}>
-                {isPaused
-                  ? (<><AntDesign name="caretright" size={16} color="#000" /><Text style={styles.pillBtnTxt}>Reprendre</Text></>)
-                  : (<><MaterialIcons name="pause" size={18} color="#000" /><Text style={styles.pillBtnTxt}>Pause</Text></>)
-                }
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => openShare(id)}>
-              <View style={styles.pillBtn}><Feather name="share-2" size={16} color="#000" /><Text style={styles.pillBtnTxt}>Inviter</Text></View>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity onPress={() => likeQOB(id)}>
+            <Text style={styles.qobTxt}>QOB {qob[id] ?? 0}</Text>
+          </TouchableOpacity>
         </View>
       </Pressable>
     );
   };
 
+  // ================= RENDER =================
   return (
     <SafeAreaView style={styles.wrap}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+      <StatusBar barStyle="light-content" />
 
-      {/* LOGO */}
-      <View style={styles.logoContainer}>
-        <Image source={require("../assets/images/logo-rhazn.png")} style={styles.logoImg} />
-        <Text style={styles.cycleTxt}>Jrs : {two(cycleDay(nowInHaiti()))}/30</Text>
-      </View>
-
-      {/* QUITTER */}
-      <TouchableOpacity onPress={quitFeed} style={styles.quitBtn}>
-        <View style={styles.pillBtn}><MaterialIcons name="exit-to-app" size={18} color="#000" /><Text style={styles.pillBtnTxt}>Quitter</Text></View>
-      </TouchableOpacity>
+      {/* LOGO HAUT DROIT */}
+      <Image
+        source={require("../assets/images/logo-rhazn.png")}
+        style={styles.logoTop}
+      />
 
       <FlatList
         data={videos}
         pagingEnabled
         showsVerticalScrollIndicator={false}
-        keyExtractor={v => v.id}
+        keyExtractor={(v) => String(v.id)}
         renderItem={renderItem}
-        onMomentumScrollEnd={e => setCurrent(Math.round(e.nativeEvent.contentOffset.y / height))}
+        onMomentumScrollEnd={(e) =>
+          setCurrent(Math.round(e.nativeEvent.contentOffset.y / height))
+        }
       />
 
-      {/* PARTAGE */}
-      <Modal visible={shareOpen} transparent animationType="fade">
-        <View style={styles.modalWrap}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Inviter sur RHAZN</Text>
+      {/* ================= OVERLAY PREMIUM TAN INSUFFISANT ================= */}
+      {lowTanVisible && (
+        <Animated.View
+          style={[
+            styles.lowTanOverlay,
+            {
+              opacity: overlayAnim,
+              transform: [
+                {
+                  scale: overlayAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.95, 1],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <View style={styles.lowTanBox}>
+            <Text style={styles.lowTanTitle}>Solde TAN insuffisant</Text>
 
-            {!!shareFor && <QRCode value={`rhazn://banq/${shareFor}`} size={180} backgroundColor="transparent" color="#D4AF37" />}
+            <Text style={styles.lowTanText}>
+              Votre solde est épuisé.{"\n\n"}
+              Rechargez votre compte auprès d’un agent RHAZN officiel pour
+              continuer à visionner.
+            </Text>
 
-            <Text selectable style={styles.linkTxt}>{`rhazn://banq/${shareFor ?? ""}`}</Text>
+            <TouchableOpacity
+              style={styles.lowTanBtn}
+              onPress={() => {
+                hideLowTanOverlay();
+                router.push("/contact-ed");
+              }}
+            >
+              <Text style={styles.lowTanBtnText}>Contacter un Agent</Text>
+            </TouchableOpacity>
 
-            <View style={styles.modalBtns}>
-              <Pressable onPress={copyLink} style={styles.copyBtn}><Text style={styles.copyTxt}>Copier</Text></Pressable>
-              <Pressable onPress={() => setShareOpen(false)} style={styles.closeBtn}><Text style={styles.closeTxt}>Fermer</Text></Pressable>
-            </View>
+            <TouchableOpacity
+              style={styles.lowTanCancel}
+              onPress={hideLowTanOverlay}
+            >
+              <Text style={styles.lowTanCancelText}>Fermer</Text>
+            </TouchableOpacity>
           </View>
-        </View>
-      </Modal>
-
+        </Animated.View>
+      )}
     </SafeAreaView>
   );
 }
 
-const GOLD = "#D4AF37";
-
+// ================= STYLES =================
 const styles = StyleSheet.create({
-  wrap:{flex:1,backgroundColor:"#000"},
-  page:{height,width},
-  video:{position:"absolute",height,width},
-  overlay:{...StyleSheet.absoluteFillObject},
-  logoContainer:{position:"absolute",top:Platform.OS==="android"?40:30,left:14,zIndex:9999,flexDirection:"row",alignItems:"center",gap:6,paddingVertical:6,paddingHorizontal:8,backgroundColor:"rgba(0,0,0,0.25)",borderRadius:12},
-  logoImg:{width:26,height:26},
-  cycleTxt:{color:"#fff",fontWeight:"700",fontSize:13},
-  quitBtn:{position:"absolute",bottom:120,alignSelf:"center",zIndex:9999},
-  middleRow:{...StyleSheet.absoluteFillObject,flexDirection:"row",alignItems:"center",justifyContent:"space-between",paddingHorizontal:16},
-  leftCol:{width:"45%",gap:14},
-  rightCol:{width:"45%",gap:14,alignItems:"flex-end"},
-  onlineTxt:{color:GOLD,fontSize:16,fontWeight:"700"},
-  timerTxt:{color:"#fff",fontSize:14},
-  authorRow:{flexDirection:"row",alignItems:"center",gap:10},
-  avatar:{width:38,height:38,borderRadius:22,borderWidth:1,borderColor:"#2a2a2a"},
-  author:{color:"#fff",fontSize:16,fontWeight:"700"},
-  qobTxt:{color:GOLD,fontSize:16,fontWeight:"800"},
-  pillBtn:{backgroundColor:GOLD,borderRadius:999,paddingVertical:8,paddingHorizontal:14,flexDirection:"row",alignItems:"center",gap:6},
-  pillBtnTxt:{color:"#000",fontWeight:"900"},
-  modalWrap:{flex:1,backgroundColor:"rgba(0,0,0,0.6)",alignItems:"center",justifyContent:"center"},
-  modalCard:{width:width*0.86,backgroundColor:"#0b0b0b",borderRadius:16,padding:18,borderWidth:1,borderColor:"#2a2a2a",alignItems:"center"},
-  modalTitle:{color:"#fff",fontWeight:"800",fontSize:16,marginBottom:8},
-  linkTxt:{color:"#ccc",fontSize:12,textAlign:"center"},
-  modalBtns:{flexDirection:"row",gap:12,marginTop:12},
-  copyBtn:{backgroundColor:GOLD,paddingVertical:10,paddingHorizontal:14,borderRadius:10},
-  copyTxt:{color:"#000",fontWeight:"800"},
-  closeBtn:{backgroundColor:"#1a1a1a",paddingVertical:10,paddingHorizontal:14,borderRadius:10,borderWidth:1,borderColor:"#2a2a2a"},
-  closeTxt:{color:"#fff"}
+  wrap: { flex: 1, backgroundColor: "#000" },
+  page: { height, width, backgroundColor: "#000" },
+  video: { position: "absolute", width: "100%", height: "100%" },
+
+  overlay: {
+    position: "absolute",
+    bottom: 0,
+    width: "100%",
+    height: "40%",
+  },
+
+  logoTop: {
+    position: "absolute",
+    top: 20,
+    right: 16,
+    width: 48,
+    height: 48,
+    zIndex: 20,
+  },
+
+  progressBar: {
+    position: "absolute",
+    bottom: 6,
+    left: 0,
+    height: 3,
+    width: "100%",
+    backgroundColor: "#333",
+  },
+  progressFill: {
+    height: 3,
+    backgroundColor: GOLD,
+  },
+
+  bottomRow: {
+    position: "absolute",
+    bottom: 26,
+    left: 16,
+    flexDirection: "column",
+    gap: 6,
+  },
+
+  tanTxt: { color: GOLD, fontWeight: "700" },
+  qobTxt: { color: GOLD, fontWeight: "700", marginTop: 4 },
+
+  profileIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: GOLD,
+    marginTop: 6,
+  },
+
+  // ===== OVERLAY PREMIUM =====
+  lowTanOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.85)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 999,
+  },
+
+  lowTanBox: {
+    width: "86%",
+    backgroundColor: "#111",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: GOLD,
+    padding: 22,
+    alignItems: "center",
+    shadowColor: GOLD,
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+
+  lowTanTitle: {
+    color: GOLD,
+    fontSize: 20,
+    fontWeight: "900",
+    marginBottom: 14,
+  },
+
+  lowTanText: {
+    color: "#ddd",
+    textAlign: "center",
+    lineHeight: 22,
+    marginBottom: 22,
+  },
+
+  lowTanBtn: {
+    backgroundColor: GOLD,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    marginBottom: 12,
+  },
+
+  lowTanBtnText: {
+    color: "#000",
+    fontWeight: "900",
+    fontSize: 15,
+  },
+
+  lowTanCancel: {
+    paddingVertical: 8,
+  },
+
+  lowTanCancelText: {
+    color: "#888",
+    fontSize: 13,
+  },
 });

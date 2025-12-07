@@ -1,12 +1,38 @@
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
   StyleSheet,
-  View
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
-import * as ImagePicker from "expo-image-picker";
+import * as Device from "expo-device";
 import { supabase } from "../../lib/supabase";
+import LoaderRhazn from "../components/LoaderRhazn";
+import { isHumanTime } from "../utils/antibot";
+import { generateCode } from "../utils/generateCode";
+
+// 🎨 PALETTE RHAZN — APPLE TYPE
+const COLORS = {
+  black: "#000000",
+  white: "#FFFFFF",
+  gray: "#9A9A9A",
+  darkGray: "#101010",
+  green: "#00C853",
+  crimson: "#B00020",
+  gold: "#D4AF37",
+};
+
+type AlertState = {
+  message: string;
+  isError: boolean;
+} | null;
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -14,47 +40,71 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-
-  const [idImage, setIdImage] = useState<string | null>(null);
-
   const [loading, setLoading] = useState(false);
+  const [alert, setAlert] = useState<AlertState>(null);
+  const [deviceId, setDeviceId] = useState("");
+  const [startTime, setStartTime] = useState(Date.now());
 
-  // 🔥 Alert system
-  const [alertVisible, setAlertVisible] = useState(false);
-  const [alertMessage, setAlertMessage] = useState("");
+  // Honeypot anti-bot
+  const [honeypot, setHoneypot] = useState("");
 
-  const showAlert = (msg: string) => {
-    setAlertMessage(msg);
-    setAlertVisible(true);
+  useEffect(() => {
+    setDeviceId(`${Device.osName}-${Device.osVersion}-${Device.modelId}`);
+  }, []);
+
+  const showAlert = (message: string, isError = true) => {
+    setAlert({ message, isError });
+    setLoading(false);
   };
 
-  // ============================
-  // 📸 SELECT ID
-  // ============================
-  const handleSelectID = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") {
-      return showAlert("Permission refusée. Activez l’accès à la galerie.");
-    }
+  const showNetError = () => {
+    showAlert(
+      "Vérifiez votre connexion internet pour continuer.",
+      true
+    );
+  };
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      allowsEditing: true,
-      quality: 1,
-    });
+  // ✅ Vérification stricte des doublons
+  const emailAlreadyExists = async (mail: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select("email")
+        .eq("email", mail)
+        .maybeSingle();
 
-    if (!result.canceled) {
-      setIdImage(result.assets[0].uri);
+      if (error) return false;
+      return !!data;
+    } catch {
+      return false;
     }
   };
 
-  // ============================
-  // 🔐 REGISTER (Supabase)
-  // ============================
+  // ✅ INSCRIPTION PREMIUM RHAZN
   const handleRegister = async () => {
+    if (loading) return;
+    setLoading(true);
+    setAlert(null);
+
     const mail = email.trim().toLowerCase();
+
+    // 🔐 Anti-bot
+    if (honeypot !== "") {
+      return showAlert("Requête bloquée pour raison de sécurité.");
+    }
+
+    if (!isHumanTime(startTime)) {
+      return showAlert("Action trop rapide. Veuillez réessayer calmement.");
+    }
 
     if (!mail || !password || !confirm) {
       return showAlert("Veuillez remplir tous les champs.");
+    }
+
+    if (!mail.includes("@") || !mail.endsWith("@gmail.com")) {
+      return showAlert(
+        "Seules les adresses Gmail sont autorisées pour l’inscription."
+      );
     }
 
     if (password.length < 8) {
@@ -65,227 +115,285 @@ export default function RegisterScreen() {
       return showAlert("Les mots de passe ne correspondent pas.");
     }
 
-    if (!idImage) {
-      return showAlert("Veuillez importer votre pièce d’identité.");
-    }
-
-    setLoading(true);
-
     try {
-      // 1️⃣ Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: mail,
-        password: password,
-      });
+      // ✅ Vérification stricte du doublon
+      const exists = await emailAlreadyExists(mail);
+      if (exists) {
+        return showAlert(
+          "Cette adresse e-mail est déjà enregistrée. Veuillez vous connecter."
+        );
+      }
 
-      if (authError) throw authError;
+      // ✅ Génération + enregistrement du code
+      const code = generateCode();
 
-      const uid = authData.user?.id;
-      if (!uid) throw new Error("Impossible de récupérer l'UID.");
-
-      // 2️⃣ Upload ID card into Supabase Storage
-      const response = await fetch(idImage);
-      const blob = await response.blob();
-
-      const path = `id-cards/${uid}.jpg`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("id-cards")
-        .upload(path, blob, {
-          cacheControl: "3600",
-          upsert: true,
+      const { error: codeError } = await supabase
+        .from("email_verification_codes")
+        .insert({
+          email: mail,
+          code,
+          device_id: deviceId,
+          expires_at: new Date(Date.now() + 10 * 60 * 1000),
+          created_at: new Date(),
         });
 
-      if (uploadError) throw uploadError;
+      if (codeError) {
+        return showAlert(
+          "Impossible de générer votre code de vérification. Réessayez."
+        );
+      }
 
-      // 3️⃣ Get public URL
-      const { data: urlData } = supabase.storage
-        .from("id-cards")
-        .getPublicUrl(path);
+      // ✅ Envoi email via function
+      const { error: sendError } =
+        await supabase.functions.invoke("send-code", {
+          body: { email: mail, device_id: deviceId },
+        });
 
-      const idImageUrl = urlData.publicUrl;
+      if (sendError) {
+        if (sendError.message.includes("Network request failed")) {
+          return showNetError();
+        }
 
-      // 4️⃣ Insert Profile in Supabase Database
-      const { error: dbError } = await supabase.from("users").insert({
-        uid,
-        email: mail,
-        fullName: null,
-        gender: null,
-        dateOfBirth: null,
+        return showAlert(
+          "Impossible d’envoyer le code pour le moment. Réessayez plus tard."
+        );
+      }
 
-        id_image_url: idImageUrl,
-        selfie_url: null,
-        verification_status: "id-uploaded",
-
-        qob: 0,
-        cir: 0,
-        tan: 0,
-        pact_count: 0,
-
-        role: "user",
-        account_status: "pending",
-        suspended: false,
-
-        created_at: new Date(),
-        updated_at: new Date(),
-      });
-
-      if (dbError) throw dbError;
-
-      // 5️⃣ Success + redirection
-      showAlert("Pièce vérifiée. Étape suivante : selfie obligatoire.");
+      // ✅ Succès → redirection vers vérification
+      showAlert(
+        "Code envoyé avec succès. Veuillez vérifier votre e-mail.",
+        false
+      );
 
       setTimeout(() => {
-        setAlertVisible(false);
-        router.replace({
-          pathname: "/auth/selfie-validation",
-          params: { uid },
+        setAlert(null);
+        router.push({
+          pathname: "/auth/send-code",
+          params: { email: mail, password, deviceId },
         });
       }, 900);
     } catch (e: any) {
-      console.log("SUPABASE_REGISTER_ERROR:", e);
-
-      let msg = "Erreur : impossible de créer le compte.";
-
-      if (e?.message?.includes("duplicate")) {
-        msg = "Cet e-mail possède déjà un compte.";
+      if (String(e?.message || "").includes("Network request failed")) {
+        showNetError();
+      } else {
+        showAlert("Erreur lors de l’inscription. Veuillez réessayer.");
       }
-
-      showAlert(msg);
     } finally {
       setLoading(false);
     }
   };
 
-  // ============================
-  // UI
-  // ============================
+  // ✅ UI APPLE TYPE PREMIUM
   return (
-    <View style={styles.full}>
-      {/* ... les styles et le JSX identiques à TA VERSION ... */}
-      {/* Je ne touche PAS l’UI car elle est parfaite */}
-    </View>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={styles.full}
+    >
+      <View style={styles.logoContainer}>
+        <Image
+          source={require("../../assets/images/rhazn-logo.png")}
+          style={styles.logo}
+        />
+      </View>
+
+      <ScrollView contentContainerStyle={styles.container}>
+        <Text style={styles.title}>Créer un compte</Text>
+        <Text style={styles.subtitle}>
+          Inscription réservée aux membres RHAZN
+        </Text>
+
+        {/* Honeypot invisible */}
+        <TextInput
+          value={honeypot}
+          onChangeText={setHoneypot}
+          style={{ height: 1, opacity: 0 }}
+        />
+
+        <TextInput
+          placeholder="Adresse Gmail"
+          placeholderTextColor={COLORS.gray}
+          style={styles.input}
+          value={email}
+          autoCapitalize="none"
+          onChangeText={(text) => {
+            setStartTime(Date.now());
+            setEmail(text);
+          }}
+        />
+
+        <TextInput
+          placeholder="Mot de passe"
+          placeholderTextColor={COLORS.gray}
+          secureTextEntry
+          style={styles.input}
+          value={password}
+          onChangeText={setPassword}
+        />
+
+        <TextInput
+          placeholder="Confirmer le mot de passe"
+          placeholderTextColor={COLORS.gray}
+          secureTextEntry
+          style={styles.input}
+          value={confirm}
+          onChangeText={setConfirm}
+        />
+
+        <TouchableOpacity
+          style={styles.createButton}
+          onPress={handleRegister}
+          disabled={loading}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.createText}>Créer le compte</Text>
+        </TouchableOpacity>
+
+        {loading && (
+          <View style={styles.loaderWrapper}>
+            <LoaderRhazn color={COLORS.green} />
+          </View>
+        )}
+
+        <TouchableOpacity onPress={() => router.back()}>
+          <Text style={styles.backText}>Déjà membre ? Connexion</Text>
+        </TouchableOpacity>
+      </ScrollView>
+
+      {/* ✅ Notification premium intelligente */}
+      {alert && (
+        <View
+          style={[
+            styles.alert,
+            {
+              borderColor: alert.isError
+                ? COLORS.crimson
+                : COLORS.green,
+              bottom: 56,
+            },
+          ]}
+        >
+          <Text style={styles.alertMsg}>{alert.message}</Text>
+          <TouchableOpacity onPress={() => setAlert(null)}>
+            <Text
+              style={[
+                styles.alertClose,
+                {
+                  color: alert.isError
+                    ? COLORS.crimson
+                    : COLORS.green,
+                },
+              ]}
+            >
+              ✕
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </KeyboardAvoidingView>
   );
 }
 
-/***************** STYLES ******************/
+// ✅ STYLES — APPLE TYPE PREMIUM
 const styles = StyleSheet.create({
-  full: { flex: 1, backgroundColor: "#000" },
+  full: {
+    flex: 1,
+    backgroundColor: COLORS.black,
+  },
 
   logoContainer: {
     position: "absolute",
-    top: 35,
-    right: 20,
-    zIndex: 100,
+    top: 40,
+    right: 24,
+    zIndex: 20,
   },
-  logo: { width: 45, height: 45, resizeMode: "contain" },
+
+  logo: {
+    width: 52,
+    height: 52,
+    resizeMode: "contain",
+    opacity: 0.95,
+  },
 
   container: {
-    flexGrow: 1,
-    justifyContent: "center",
+    paddingTop: 140,
+    paddingHorizontal: 26,
     alignItems: "center",
-    padding: 24,
-    paddingTop: 130,
   },
 
   title: {
-    color: "#fff",
-    fontSize: 28,
-    fontWeight: "700",
-    marginBottom: 8,
+    color: COLORS.white,
+    fontSize: 30,
+    fontWeight: "800",
+    marginBottom: 6,
   },
+
   subtitle: {
-    color: "#bbb",
-    fontSize: 15,
-    marginBottom: 20,
-    textAlign: "center",
-  },
-
-  scanButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderColor: "#FFD700",
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
-  scanText: {
-    color: "#FFD700",
+    color: COLORS.gray,
     fontSize: 14,
-    fontWeight: "600",
-    marginLeft: 8,
-  },
-
-  preview: {
-    width: 160,
-    height: 110,
-    marginBottom: 12,
-    borderRadius: 8,
+    marginBottom: 30,
   },
 
   input: {
     width: "100%",
-    backgroundColor: "#111",
-    color: "#fff",
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    marginBottom: 12,
+    backgroundColor: COLORS.darkGray,
+    color: COLORS.white,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 18,
+    marginBottom: 16,
+    borderColor: "#1f1f1f",
     borderWidth: 1,
-    borderColor: "#222",
   },
 
   createButton: {
-    backgroundColor: "#FFD700",
     width: "100%",
-    borderRadius: 8,
-    paddingVertical: 12,
-    marginTop: 10,
-  },
-  createText: {
-    textAlign: "center",
-    color: "#000",
-    fontWeight: "700",
-    fontSize: 15,
+    paddingVertical: 16,
+    borderRadius: 999,
+    marginTop: 8,
+    backgroundColor: COLORS.gold,
+    elevation: 8,
   },
 
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.75)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 30,
-  },
-  modalCard: {
-    width: "100%",
-    backgroundColor: "#0B0BB0",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#FFD70055",
-    padding: 22,
-    alignItems: "center",
-  },
-  modalTitle: {
-    color: "#FFD700",
-    fontSize: 20,
-    fontWeight: "800",
-  },
-  modalMsg: {
-    color: "#ccc",
-    fontSize: 14,
+  createText: {
     textAlign: "center",
-    marginVertical: 12,
-  },
-  modalBtn: {
-    backgroundColor: "#FFD700",
-    paddingVertical: 10,
-    paddingHorizontal: 22,
-    borderRadius: 10,
-  },
-  modalBtnTxt: {
-    color: "#000",
     fontWeight: "700",
+    fontSize: 16,
+    color: COLORS.black,
+  },
+
+  loaderWrapper: {
+    marginTop: 18,
+    alignItems: "center",
+  },
+
+  backText: {
+    color: COLORS.white,
+    marginTop: 30,
+    opacity: 0.7,
+  },
+
+  alert: {
+    position: "absolute",
+    left: 20,
+    right: 20,
+    backgroundColor: "#0f0f0f",
+    padding: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+
+  alertMsg: {
+    color: COLORS.white,
+    flex: 1,
+    marginRight: 10,
+    fontSize: 13,
+  },
+
+  alertClose: {
+    fontWeight: "800",
+    fontSize: 16,
   },
 });

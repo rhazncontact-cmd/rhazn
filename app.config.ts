@@ -26,7 +26,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     newArchEnabled: true,
     userInterfaceStyle: "automatic",
 
-    icon: "./assets/images/rhazn-logo.png",
+    icon: "./assets/images/rz-logo.png",
     assetBundlePatterns: ["**/*"],
 
     /** ✅ ANDROID — VERSION DÉFINITIVE SDK 36 */
@@ -34,7 +34,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       package: androidPackage,
 
       adaptiveIcon: {
-        foregroundImage: "./assets/images/rhazn-logo.png",
+        foregroundImage: "./assets/images/rz-logo.png",
         backgroundColor: "#000000",
       },
 
@@ -80,7 +80,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
 
     web: {
-      favicon: "./assets/images/rhazn-logo.png",
+      favicon: "./assets/images/rz-logo.png",
     },
 
     /** ✅ PLUGINS — VERSION STABLE SANS BARCODE-SCANNER */
@@ -94,7 +94,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       [
         "expo-splash-screen",
         {
-          image: "./assets/images/rhazn-logo.png",
+          image: "./assets/images/grape.png",
           resizeMode: "contain",
           backgroundColor: "#000000",
         },

@@ -1,6 +1,6 @@
 import * as Device from "expo-device";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Easing,
@@ -27,10 +27,7 @@ const COLORS = {
 
 export default function SendCodeScreen() {
   const router = useRouter();
-  const { email, password } = useLocalSearchParams<{
-    email: string;
-    password: string;
-  }>();
+  const { email } = useLocalSearchParams<{ email: string }>();
 
   const [loading, setLoading] = useState(false);
   const [resendTimer, setResendTimer] = useState(60);
@@ -47,7 +44,7 @@ export default function SendCodeScreen() {
     setDeviceId(`${Device.osName}-${Device.osVersion}-${Device.modelId}`);
   }, []);
 
-  // ✅ ANIMATION PULSATION
+  // ✅ ANIMATION
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
@@ -76,7 +73,7 @@ export default function SendCodeScreen() {
 
   const showAlert = (message: string, isError = false) => {
     setAlert({ message, isError });
-    setTimeout(() => setAlert(null), 2800);
+    setTimeout(() => setAlert(null), 3500);
   };
 
   const showNetError = () => {
@@ -86,40 +83,34 @@ export default function SendCodeScreen() {
     );
   };
 
-  // ✅ RENVOI CODE FINAL & SÉCURISÉ
+  // ✅ ✅ ✅ RENVOI CODE — VERSION FINALE ROBUSTE
   const resendCode = async () => {
-    if (loading) return;
+    if (loading || !email) return;
     setLoading(true);
     setResendTimer(60);
 
     try {
-      // ✅ Génération nouveau code
-      const newCode = Math.floor(100000 + Math.random() * 900000).toString();
+      // 🔐 1. Vérification email
+      const { data: emailExists } = await supabase
+        .from("users")
+        .select("email")
+        .eq("email", email)
+        .maybeSingle();
 
-      // ✅ Optionnel : invalider anciens codes
+      if (!emailExists) {
+        return showAlert(
+          "Adresse e-mail invalide. Veuillez vous réinscrire.",
+          true
+        );
+      }
+
+      // 🔐 2. Invalider anciens codes
       await supabase
         .from("email_verification_codes")
         .delete()
         .eq("email", email);
 
-      // ✅ Enregistrement nouveau code
-      const { error: insertError } = await supabase
-        .from("email_verification_codes")
-        .insert({
-          email,
-          code: newCode,
-          device_id: deviceId,
-          expires_at: new Date(Date.now() + 10 * 60 * 1000),
-        });
-
-      if (insertError) {
-        return showAlert(
-          "Impossible de générer un nouveau code. Réessayez.",
-          true
-        );
-      }
-
-      // ✅ Envoi par email
+      // 🔐 3. Envoi via Function
       const { error: sendError } =
         await supabase.functions.invoke("send-code", {
           body: { email, device_id: deviceId },
@@ -196,7 +187,7 @@ export default function SendCodeScreen() {
             onPress={() =>
               router.push({
                 pathname: "/auth/verify-code",
-                params: { email, password, deviceId },
+                params: { email },
               })
             }
             activeOpacity={0.85}

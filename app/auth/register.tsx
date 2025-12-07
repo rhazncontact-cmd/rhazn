@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Image,
   KeyboardAvoidingView,
@@ -45,7 +45,7 @@ export default function RegisterScreen() {
   const [deviceId, setDeviceId] = useState("");
   const [startTime, setStartTime] = useState(Date.now());
 
-  // Honeypot anti-bot
+  // ✅ Honeypot anti-bot
   const [honeypot, setHoneypot] = useState("");
 
   useEffect(() => {
@@ -64,23 +64,24 @@ export default function RegisterScreen() {
     );
   };
 
-  // ✅ Vérification stricte des doublons
+  // ✅ Vérification stricte du doublon email
   const emailAlreadyExists = async (mail: string) => {
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("users")
         .select("email")
         .eq("email", mail)
         .maybeSingle();
 
-      if (error) return false;
       return !!data;
     } catch {
       return false;
     }
   };
 
-  // ✅ INSCRIPTION PREMIUM RHAZN
+  // ============================================================================
+  // ✅ INSCRIPTION RHAZN — VERSION FINALE RLS SAFE
+  // ============================================================================
   const handleRegister = async () => {
     if (loading) return;
     setLoading(true);
@@ -88,7 +89,7 @@ export default function RegisterScreen() {
 
     const mail = email.trim().toLowerCase();
 
-    // 🔐 Anti-bot
+    // ✅ Anti-bot
     if (honeypot !== "") {
       return showAlert("Requête bloquée pour raison de sécurité.");
     }
@@ -101,10 +102,8 @@ export default function RegisterScreen() {
       return showAlert("Veuillez remplir tous les champs.");
     }
 
-    if (!mail.includes("@") || !mail.endsWith("@gmail.com")) {
-      return showAlert(
-        "Seules les adresses Gmail sont autorisées pour l’inscription."
-      );
+    if (!mail.includes("@")) {
+      return showAlert("Adresse e-mail invalide.");
     }
 
     if (password.length < 8) {
@@ -116,7 +115,7 @@ export default function RegisterScreen() {
     }
 
     try {
-      // ✅ Vérification stricte du doublon
+      // ✅ 1. Vérification stricte du doublon
       const exists = await emailAlreadyExists(mail);
       if (exists) {
         return showAlert(
@@ -124,7 +123,39 @@ export default function RegisterScreen() {
         );
       }
 
-      // ✅ Génération + enregistrement du code
+      // ✅ 2. Création du compte AUTH (PAS encore dans public.users)
+      const { data: signUpData, error: signUpError } =
+        await supabase.auth.signUp({
+          email: mail,
+          password,
+        });
+
+      if (signUpError || !signUpData.user) {
+        return showAlert(
+          "Impossible de créer votre compte pour le moment."
+        );
+      }
+
+      const uid = signUpData.user.id;
+
+      // ✅ 3. Enregistrement profil (table users) — RLS SAFE
+      const { error: insertProfileError } =
+        await supabase.from("users").insert({
+          uid,
+          email: mail,
+          tan: 0,
+          role: "user",
+          contract_accept: false,
+          created_at: new Date().toISOString(),
+        });
+
+      if (insertProfileError) {
+        return showAlert(
+          "Erreur d'initialisation du profil utilisateur."
+        );
+      }
+
+      // ✅ 4. Génération + stockage du code de vérification
       const code = generateCode();
 
       const { error: codeError } = await supabase
@@ -139,11 +170,11 @@ export default function RegisterScreen() {
 
       if (codeError) {
         return showAlert(
-          "Impossible de générer votre code de vérification. Réessayez."
+          "Impossible de générer le code de vérification."
         );
       }
 
-      // ✅ Envoi email via function
+      // ✅ 5. Envoi du code par Function
       const { error: sendError } =
         await supabase.functions.invoke("send-code", {
           body: { email: mail, device_id: deviceId },
@@ -155,13 +186,13 @@ export default function RegisterScreen() {
         }
 
         return showAlert(
-          "Impossible d’envoyer le code pour le moment. Réessayez plus tard."
+          "Impossible d’envoyer le code pour le moment."
         );
       }
 
-      // ✅ Succès → redirection vers vérification
+      // ✅ 6. Succès
       showAlert(
-        "Code envoyé avec succès. Veuillez vérifier votre e-mail.",
+        "Code envoyé avec succès. Vérifiez votre e-mail.",
         false
       );
 
@@ -169,21 +200,23 @@ export default function RegisterScreen() {
         setAlert(null);
         router.push({
           pathname: "/auth/send-code",
-          params: { email: mail, password, deviceId },
+          params: { email: mail },
         });
       }, 900);
     } catch (e: any) {
       if (String(e?.message || "").includes("Network request failed")) {
         showNetError();
       } else {
-        showAlert("Erreur lors de l’inscription. Veuillez réessayer.");
+        showAlert("Erreur lors de l’inscription.");
       }
     } finally {
       setLoading(false);
     }
   };
 
+  // ============================================================================
   // ✅ UI APPLE TYPE PREMIUM
+  // ============================================================================
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -199,7 +232,7 @@ export default function RegisterScreen() {
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>Créer un compte</Text>
         <Text style={styles.subtitle}>
-          Inscription réservée aux membres RHAZN
+          Inscription sécurisée RHAZN
         </Text>
 
         {/* Honeypot invisible */}
@@ -210,7 +243,7 @@ export default function RegisterScreen() {
         />
 
         <TextInput
-          placeholder="Adresse Gmail"
+          placeholder="Adresse e-mail"
           placeholderTextColor={COLORS.gray}
           style={styles.input}
           value={email}
@@ -259,7 +292,7 @@ export default function RegisterScreen() {
         </TouchableOpacity>
       </ScrollView>
 
-      {/* ✅ Notification premium intelligente */}
+      {/* ✅ Notification premium */}
       {alert && (
         <View
           style={[
@@ -293,7 +326,9 @@ export default function RegisterScreen() {
   );
 }
 
+// ============================================================================
 // ✅ STYLES — APPLE TYPE PREMIUM
+// ============================================================================
 const styles = StyleSheet.create({
   full: {
     flex: 1,

@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { StyleSheet, View } from "react-native";
 import Animated, {
   FadeIn,
@@ -36,7 +36,7 @@ export default function SplashScreen() {
       <Animated.Image
         entering={FadeIn.duration(1000)}
         exiting={FadeOut.duration(800)}
-        source={require("@/assets/images/rhazn-logo.png")}
+        source={require("@/assets/images/grape.png")}
         style={[styles.logo, animatedStyle]}
         resizeMode="contain"
       />

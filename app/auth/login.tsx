@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import { Lock } from "lucide-react-native";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Image,
   KeyboardAvoidingView,
@@ -63,25 +63,18 @@ export default function LoginScreen() {
     setLoading(false);
   };
 
-  const showNetError = () => {
-    showAlert(
-      "Connexion requise",
-      "Vérifiez votre connexion internet pour continuer."
-    );
-  };
-
   // ============================================================================
-  // 🔥 AUTO-CREATION WALLET UTILISATEUR
+  // ✅ WALLET — CRÉATION SÛRE
   // ============================================================================
   const ensureUserWallet = async (uid: string) => {
     try {
-      const { data: existingWallet } = await supabase
+      const { data } = await supabase
         .from("users_wallet")
         .select("id")
         .eq("user_uid", uid)
         .maybeSingle();
 
-      if (existingWallet) return true;
+      if (data) return true;
 
       const { error } = await supabase.from("users_wallet").insert({
         user_uid: uid,
@@ -97,7 +90,7 @@ export default function LoginScreen() {
   };
 
   // ============================================================================
-  // 🔐 LOGIN PREMIUM RHAZN — VERSION SÉCURISÉE & INTELLIGENTE
+  // ✅ LOGIN FINAL — RLS SAFE — SESSION SAFE — PROD READY
   // ============================================================================
   const handleLogin = async () => {
     if (loading) return;
@@ -113,87 +106,70 @@ export default function LoginScreen() {
     }
 
     try {
-      // 1️⃣ Vérifier si l'email existe
-      const { data: existingUser, error: userCheckError } = await supabase
-        .from("users")
-        .select("uid")
-        .eq("email", cleanEmail)
-        .maybeSingle();
-
-      if (userCheckError) {
-        if (userCheckError.message.includes("Network request failed")) {
-          return showNetError();
-        }
-      }
-
-      if (!existingUser) {
-        return showAlert(
-          "E-mail non inscrit",
-          "Cet e-mail n’est pas encore inscrit. Veuillez cliquer sur « Créer un compte » pour vous enregistrer."
-        );
-      }
-
-      // 2️⃣ Auth Supabase
-      const { error: loginErr } =
+      // ✅ 1. AUTH D’ABORD (OBLIGATOIRE AVANT TOUT ACCÈS RLS)
+      const { data: authData, error: loginErr } =
         await supabase.auth.signInWithPassword({
           email: cleanEmail,
           password,
         });
 
       if (loginErr) {
-        if (loginErr.message.includes("Invalid login credentials")) {
+        if (loginErr.message.includes("Invalid")) {
           return showAlert(
             "Identifiants incorrects",
-            "Le mot de passe est incorrect. Veuillez réessayer."
+            "Le mot de passe est incorrect."
           );
         }
 
         if (loginErr.message.includes("Email not confirmed")) {
           return showAlert(
             "Compte non activé",
-            "Votre compte n’a pas encore été activé via le code RHAZN."
+            "Veuillez confirmer votre e-mail."
           );
         }
 
-        if (loginErr.message.includes("Network request failed")) {
-          return showNetError();
-        }
-
-        return showAlert(
-          "Connexion impossible",
-          "Erreur serveur. Veuillez réessayer."
-        );
+        return showAlert("Connexion impossible", "Erreur serveur.");
       }
 
-      const { data: sessionData } = await supabase.auth.getSession();
-      const session = sessionData?.session;
-      if (!session) return showAlert("Erreur", "Session introuvable.");
+      const userId = authData.user?.id;
+      if (!userId) {
+        return showAlert("Erreur critique", "Session invalide.");
+      }
 
-      const userId = session.user.id;
-
-      const { data: userData } = await supabase
+      // ✅ 2. PROFIL UTILISATEUR APRÈS AUTH
+      const { data: userData, error: profileErr } = await supabase
         .from("users")
         .select("*")
         .eq("uid", userId)
         .maybeSingle();
 
+      if (profileErr) {
+        return showAlert(
+          "Erreur profil",
+          "Impossible de charger votre compte."
+        );
+      }
+
+      // ✅ 3. CRÉATION SI ABSENT (RLS SAFE)
       if (!userData) {
-        await supabase.from("users").insert({
+        const { error: insertErr } = await supabase.from("users").insert({
           uid: userId,
           email: cleanEmail,
           tan: 0,
           role: "user",
-          device_id: deviceId,
+          contract_accept: false,
+          created_at: new Date().toISOString(),
         });
+
+        if (insertErr) {
+          return showAlert(
+            "Erreur création compte",
+            "Impossible d'initialiser votre compte."
+          );
+        }
       }
 
-      if (userData?.device_id && userData.device_id !== deviceId) {
-        return showAlert(
-          "Appareil non autorisé",
-          "Ce compte est déjà lié à un autre appareil."
-        );
-      }
-
+      // ✅ 4. WALLET
       const walletOK = await ensureUserWallet(userId);
       if (!walletOK) {
         return showAlert(
@@ -207,16 +183,12 @@ export default function LoginScreen() {
       setTimeout(() => {
         setAlert(null);
         router.replace("/contract");
-      }, 900);
-    } catch (err: any) {
-      if (String(err?.message || "").includes("Network request failed")) {
-        showNetError();
-      } else {
-        showAlert(
-          "Erreur critique",
-          "Une erreur inattendue s'est produite. Veuillez réessayer."
-        );
-      }
+      }, 700);
+    } catch {
+      showAlert(
+        "Erreur critique",
+        "Une erreur inattendue s'est produite."
+      );
     } finally {
       setLoading(false);
     }
@@ -255,7 +227,7 @@ export default function LoginScreen() {
   };
 
   // ============================================================================
-  // UI — APPLE TYPE PREMIUM
+  // UI — APPLE TYPE
   // ============================================================================
   return (
     <KeyboardAvoidingView

@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Image,
@@ -126,10 +126,8 @@ export default function VerifyCodeScreen() {
     if (value.length > 1) {
       const chars = value.replace(/\D/g, "").split("").slice(0, 6);
       const filled = [...code];
-
       chars.forEach((c, i) => (filled[i] = c));
       setCode(filled);
-
       if (chars.length === 6) verifyCode(chars.join(""));
       return;
     }
@@ -140,13 +138,8 @@ export default function VerifyCodeScreen() {
     newCode[index] = value;
     setCode(newCode);
 
-    if (value && index < 5) {
-      inputs.current[index + 1]?.focus();
-    }
-
-    if (!value && index > 0) {
-      inputs.current[index - 1]?.focus();
-    }
+    if (value && index < 5) inputs.current[index + 1]?.focus();
+    if (!value && index > 0) inputs.current[index - 1]?.focus();
 
     const joined = newCode.join("");
     if (joined.length === 6 && !joined.includes("")) verifyCode(joined);
@@ -158,32 +151,12 @@ export default function VerifyCodeScreen() {
     const finalCode = forcedCode || code.join("");
 
     if (finalCode.length !== 6) {
-      showAlert(
-        "⚠️ Code incomplet",
-        "Toutes les cases ne sont pas remplies.",
-        "Veuillez entrer les 6 chiffres reçus par email.",
-        true
-      );
+      showAlert("⚠️ Code incomplet", "Veuillez entrer les 6 chiffres.", "", true);
       return;
     }
 
     if (!email) {
-      showAlert(
-        "❌ Email manquant",
-        "Nous ne retrouvons pas votre adresse email.",
-        "Retournez à l’inscription.",
-        true
-      );
-      return;
-    }
-
-    if (locked) {
-      showAlert(
-        "🔒 Trop de tentatives",
-        "Votre compte est temporairement verrouillé.",
-        "Attendez 3 minutes ou demandez un nouveau code.",
-        true
-      );
+      showAlert("❌ Email manquant", "Retournez à l’inscription.", "", true);
       return;
     }
 
@@ -198,119 +171,73 @@ export default function VerifyCodeScreen() {
         .order("created_at", { ascending: false })
         .maybeSingle();
 
-      if (!data) {
+      if (!data)
         return failAttempt(
           "❌ Code incorrect",
-          "Le code saisi est invalide.",
-          "Vérifiez l’email reçu ou cliquez sur ‘Renvoyer le code’."
+          "Code invalide.",
+          "Vérifiez votre email."
         );
-      }
 
-      if (new Date(data.expires_at) < new Date()) {
-        return failAttempt(
-          "⏰ Code expiré",
-          "Ce code n’est plus valide.",
-          "Cliquez sur ‘Renvoyer le code’ pour en recevoir un nouveau."
-        );
-      }
-
-      const { data: authData, error: authErr } =
-        await supabase.auth.signUp({
-          email: email as string,
-          password: password as string,
-        });
-
-      if (authErr && authErr.message.includes("User already registered")) {
-        showAlert(
-          "✅ Compte déjà existant",
-          "Ce compte existe déjà.",
-          "Connexion automatique en cours."
-        );
-        await supabase.auth.signInWithPassword({
-          email: email as string,
-          password: password as string,
-        });
-      } else if (authErr) {
-        showAlert(
-          "❌ Création impossible",
-          "Une erreur est survenue.",
-          "Vérifiez votre connexion Internet.",
-          true
-        );
-        return;
-      }
+      const { data: authData } = await supabase.auth.signUp({
+        email: email as string,
+        password: password as string,
+      });
 
       const {
         data: { user },
       } = await supabase.auth.getUser();
 
       const uid = user?.id ?? authData?.user?.id;
+      if (!uid) throw new Error("UID introuvable");
 
-      if (!uid) {
-        showAlert(
-          "❌ Session invalide",
-          "Impossible de récupérer votre session.",
-          "Redémarrez l’application.",
-          true
-        );
-        return;
-      }
-
-      const { data: existingUser } = await supabase
+      const { data: userRow, error: upsertError } = await supabase
         .from("users")
-        .select("uid, contract_accepted")
-        .eq("uid", uid)
-        .maybeSingle();
-
-      let contractAccepted = existingUser?.contract_accepted ?? false;
-
-      if (!existingUser) {
-        const { data: inserted, error: insertError } = await supabase
-          .from("users")
-          .insert({
+        .upsert(
+          {
             uid,
             email,
             tan: 0,
             role: "user",
             contract_accepted: false,
-          })
-          .select("contract_accepted")
-          .single();
+          },
+          { onConflict: "uid" }
+        )
+        .select("contract_accepted")
+        .single();
 
-        if (insertError) {
-          showAlert(
-            "❌ Erreur interne",
-            "Impossible d’initialiser votre profil.",
-            "Réessayez plus tard.",
-            true
-          );
-          return;
-        }
-
-        contractAccepted = inserted?.contract_accepted ?? false;
+      if (upsertError) {
+        console.log("UPSERT_ERROR:", upsertError);
+        showAlert(
+          "❌ Erreur interne",
+          "Initialisation impossible.",
+          "Veuillez réessayer plus tard.",
+          true
+        );
+        return;
       }
+
+      const contractAccepted = userRow?.contract_accepted ?? false;
 
       triggerSuccess();
       showAlert(
         "✅ Vérification réussie",
-        "Votre compte est actif.",
+        "Compte activé.",
         contractAccepted
-          ? "Redirection vers l’accueil RHAZN."
-          : "Veuillez d’abord accepter le Contrat RHAZN.",
+          ? "Accès à RHAZN."
+          : "Veuillez accepter le contrat.",
         false
       );
 
       setTimeout(() => {
-        if (contractAccepted) {
-          router.replace("/flux-intro");
-        } else {
-          router.replace("/legal/contract");
-        }
+        router.replace(
+          contractAccepted ? "/flux-intro" : "/legal/contract"
+        );
       }, 1200);
     } catch (e) {
+      console.log("VERIFY_ERROR:", e);
       showAlert(
         "🌐 Erreur réseau",
-        "Impossible de contacter le serveur.",
+        "Serveur injoignable.",
         "Vérifiez votre connexion.",
         true
       );
@@ -319,23 +246,12 @@ export default function VerifyCodeScreen() {
     }
   };
 
-  // ✅ ✅ ✅ SEULE MODIFICATION DEMANDÉE — BOUTON “RENVOYER LE CODE”
   const resendCode = async () => {
     if (cooldown > 0) return;
     setCooldown(RESEND_COOLDOWN);
 
-    if (!email) {
-      showAlert(
-        "❌ Email invalide",
-        "Aucune adresse email n’a été détectée.",
-        "Retournez à l’inscription pour saisir un email valide.",
-        true
-      );
-      return;
-    }
-
     try {
-      const res = await fetch(
+      await fetch(
         "https://mxxlchaygarszkygmylo.functions.supabase.co/send-code",
         {
           method: "POST",
@@ -348,49 +264,17 @@ export default function VerifyCodeScreen() {
         }
       );
 
-      if (!res.ok) {
-        showAlert(
-          "⚠️ Problème serveur",
-          "Le serveur ne répond pas correctement.",
-          "Veuillez patienter quelques instants puis réessayer.",
-          true
-        );
-        return;
-      }
-
-      const result = await res.json();
-
-      if (result?.error === "invalid_email") {
-        showAlert(
-          "❌ Email invalide",
-          "L’adresse email fournie est incorrecte.",
-          "Retournez à l’inscription et vérifiez l’email.",
-          true
-        );
-        return;
-      }
-
-      if (result?.error) {
-        showAlert(
-          "❌ Envoi impossible",
-          "Une erreur interne est survenue.",
-          "Vérifiez votre connexion ou réessayez dans quelques instants.",
-          true
-        );
-        return;
-      }
-
       showAlert(
-        "📨 Code envoyé avec succès",
-        "Un nouveau code vient d’être envoyé sur votre email.",
-        "Veuillez vérifier votre boîte de réception (et les spams).",
+        "📨 Code envoyé",
+        "Nouveau code transmis.",
+        "Vérifiez votre messagerie.",
         false
       );
-    } catch (e) {
+    } catch {
       showAlert(
-        "🌐 Problème Internet",
-        "Impossible de contacter le serveur.",
-        "Vérifiez votre connexion Wi-Fi ou mobile.",
+        "🌐 Connexion échouée",
+        "Impossible de renvoyer le code.",
+        "Réessayez plus tard.",
         true
       );
     }
@@ -410,7 +294,6 @@ export default function VerifyCodeScreen() {
         style={[styles.container, { transform: [{ translateY: panY }] }]}
       >
         <Text style={styles.title}>Vérification Sécurisée</Text>
-
         <Text style={styles.email}>{email}</Text>
 
         <View style={styles.codeContainer}>

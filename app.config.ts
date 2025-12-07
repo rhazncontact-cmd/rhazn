@@ -34,7 +34,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       package: androidPackage,
 
       adaptiveIcon: {
-        foregroundImage: "./assets/images/rz-logo.png",
+        foregroundImage: "./assets/images/rhazn-logo.png",
         backgroundColor: "#000000",
       },
 

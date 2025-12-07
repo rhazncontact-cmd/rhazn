@@ -45,7 +45,7 @@ export default function VerifyCodeScreen() {
     setTimeout(() => setAlert(null), 3000);
   };
 
-  // ✅ Gestion intelligente saisie / suppression
+  // ✅ SAISIE 1 CHIFFRE PAR CASE
   const handleDigit = (value: string, index: number) => {
     if (!/^\d?$/.test(value)) return;
 
@@ -62,10 +62,11 @@ export default function VerifyCodeScreen() {
     }
   };
 
-  // ✅ Collage automatique
+  // ✅ COLLAGE GLOBAL DU CODE
   const handlePaste = (text: string) => {
     if (!/^\d{6}$/.test(text)) return;
-    setCode(text.split(""));
+    const arr = text.split("");
+    setCode(arr);
     inputs.current[5]?.focus();
   };
 
@@ -75,141 +76,102 @@ export default function VerifyCodeScreen() {
     const finalCode = code.join("");
 
     if (finalCode.length !== 6) {
-      return showAlert(
-        "Veuillez entrer les 6 chiffres reçus par e-mail.",
-        true
-      );
+      return showAlert("Veuillez entrer les 6 chiffres reçus.", true);
     }
 
     if (!email) {
-      return showAlert(
-        "Adresse e-mail introuvable. Veuillez recommencer l’inscription.",
-        true
-      );
+      return showAlert("Email introuvable. Recommencez l’inscription.", true);
     }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanCode = finalCode.trim();
 
     setLoading(true);
 
     try {
-      // ✅ TABLE CORRECTE
       const { data, error } = await supabase
         .from("email_verification_codes")
         .select("*")
-        .eq("email", email)
-        .eq("code", finalCode)
+        .eq("email", cleanEmail)
+        .eq("code", cleanCode)
         .order("created_at", { ascending: false })
         .maybeSingle();
 
       if (error || !data) {
         Vibration.vibrate(120);
-        return showAlert(
-          "Code incorrect ou expiré. Veuillez réessayer.",
-          true
-        );
+        setLoading(false);
+        return showAlert("Code incorrect.", true);
       }
 
       if (new Date(data.expires_at) < new Date()) {
-        return showAlert(
-          "Ce code a expiré. Veuillez en demander un nouveau.",
-          true
-        );
+        setLoading(false);
+        return showAlert("Code expiré. Demandez-en un autre.", true);
       }
 
-      // ✅ AUTH SUPABASE
-      const { error: authError } =
-        await supabase.auth.signUp({
-          email,
-          password,
-        });
+      // ✅ AUTH
+      const { error: authError } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password,
+      });
 
-      if (
-        authError &&
-        !authError.message.includes("already")
-      ) {
-        return showAlert(
-          "Erreur lors de la création du compte.",
-          true
-        );
+      if (authError && !authError.message.includes("already")) {
+        setLoading(false);
+        return showAlert("Erreur auth.", true);
       }
 
       if (authError?.message.includes("already")) {
         await supabase.auth.signInWithPassword({
-          email,
+          email: cleanEmail,
           password,
         });
       }
 
-      const { data: userSession } =
-        await supabase.auth.getUser();
-
-      const uid = userSession?.user?.id;
-
+      const { data: session } = await supabase.auth.getUser();
+      const uid = session?.user?.id;
       if (!uid) {
-        return showAlert(
-          "Session invalide. Redémarrez l’application.",
-          true
-        );
+        setLoading(false);
+        return showAlert("Session invalide.", true);
       }
 
-      // ✅ PROFIL USER
       const { data: existingUser } = await supabase
         .from("users")
         .select("contract_accepted")
         .eq("uid", uid)
         .maybeSingle();
 
-      let contractAccepted =
-        existingUser?.contract_accepted ?? false;
+      let contractAccepted = existingUser?.contract_accepted ?? false;
 
       if (!existingUser) {
-        const { data: inserted, error: insertError } =
-          await supabase
-            .from("users")
-            .insert({
-              uid,
-              email,
-              tan: 0,
-              role: "user",
-              contract_accepted: false,
-            })
-            .select("contract_accepted")
-            .single();
+        const { data: inserted } = await supabase
+          .from("users")
+          .insert({
+            uid,
+            email: cleanEmail,
+            tan: 0,
+            role: "user",
+            contract_accepted: false,
+          })
+          .select("contract_accepted")
+          .single();
 
-        if (insertError) {
-          return showAlert(
-            "Erreur lors de l’initialisation du compte.",
-            true
-          );
-        }
-
-        contractAccepted =
-          inserted?.contract_accepted ?? false;
+        contractAccepted = inserted?.contract_accepted ?? false;
       }
 
-      // ✅ ANIMATION SUCCÈS
       Animated.timing(successScale, {
         toValue: 1,
-        duration: 500,
+        duration: 400,
         useNativeDriver: true,
       }).start();
 
-      showAlert(
-        "Vérification réussie. Bienvenue dans RHAZN.",
-        false
-      );
+      showAlert("Vérification réussie.", false);
 
       setTimeout(() => {
-        if (contractAccepted) {
-          router.replace("/flux-intro");
-        } else {
-          router.replace("/legal/contract");
-        }
-      }, 1100);
+        router.replace(
+          contractAccepted ? "/flux-intro" : "/legal/contract"
+        );
+      }, 900);
     } catch {
-      showAlert(
-        "Vérifiez votre connexion internet et réessayez.",
-        true
-      );
+      showAlert("Vérifiez votre connexion.", true);
     } finally {
       setLoading(false);
     }
@@ -232,21 +194,15 @@ export default function VerifyCodeScreen() {
               key={index}
               ref={(ref) => (inputs.current[index] = ref!)}
               value={digit}
-              onChangeText={(v) => {
-                handleDigit(v, index);
-                if (index === 0 && v.length === 6) {
-                  handlePaste(v);
-                }
-              }}
               keyboardType="numeric"
-              maxLength={6}
+              maxLength={1}
+              onChangeText={(v) => handleDigit(v, index)}
+              onPaste={({ nativeEvent }: any) =>
+                handlePaste(nativeEvent.text)
+              }
               style={[
                 styles.input,
-                {
-                  borderColor: isError
-                    ? COLORS.crimson
-                    : COLORS.green,
-                },
+                { borderColor: isError ? COLORS.crimson : COLORS.green },
               ]}
             />
           ))}
@@ -256,11 +212,7 @@ export default function VerifyCodeScreen() {
           <Text
             style={[
               styles.alert,
-              {
-                color: isError
-                  ? COLORS.crimson
-                  : COLORS.green,
-              },
+              { color: isError ? COLORS.crimson : COLORS.green },
             ]}
           >
             {alert}
@@ -270,10 +222,7 @@ export default function VerifyCodeScreen() {
         {loading ? (
           <LoaderRhazn />
         ) : (
-          <TouchableOpacity
-            style={styles.verifyButton}
-            onPress={verifyCode}
-          >
+          <TouchableOpacity style={styles.verifyButton} onPress={verifyCode}>
             <Text style={styles.verifyText}>Valider</Text>
           </TouchableOpacity>
         )}
@@ -281,10 +230,7 @@ export default function VerifyCodeScreen() {
         <Animated.View
           style={[
             styles.successOverlay,
-            {
-              transform: [{ scale: successScale }],
-              opacity: successScale,
-            },
+            { transform: [{ scale: successScale }], opacity: successScale },
           ]}
         >
           <Text style={styles.successText}>✅</Text>
@@ -302,25 +248,11 @@ const styles = StyleSheet.create({
     right: 24,
     width: 46,
     height: 46,
-    opacity: 0.9,
-    zIndex: 10,
   },
   container: { marginTop: 160, paddingHorizontal: 26 },
-  title: {
-    color: COLORS.white,
-    fontSize: 30,
-    textAlign: "center",
-    marginBottom: 12,
-  },
-  email: {
-    color: COLORS.gray,
-    textAlign: "center",
-    marginBottom: 28,
-  },
-  codeContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
+  title: { color: COLORS.white, fontSize: 30, textAlign: "center" },
+  email: { color: COLORS.gray, textAlign: "center", marginBottom: 28 },
+  codeContainer: { flexDirection: "row", justifyContent: "space-between" },
   input: {
     width: 48,
     height: 60,
@@ -342,11 +274,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontWeight: "800",
   },
-  alert: {
-    textAlign: "center",
-    marginVertical: 12,
-    fontSize: 13,
-  },
+  alert: { textAlign: "center", marginVertical: 12, fontSize: 13 },
   successOverlay: {
     position: "absolute",
     top: "45%",

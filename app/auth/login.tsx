@@ -64,33 +64,7 @@ export default function LoginScreen() {
   };
 
   // ============================================================================
-  // ✅ WALLET — CRÉATION SÛRE
-  // ============================================================================
-  const ensureUserWallet = async (uid: string) => {
-    try {
-      const { data } = await supabase
-        .from("users_wallet")
-        .select("id")
-        .eq("user_uid", uid)
-        .maybeSingle();
-
-      if (data) return true;
-
-      const { error } = await supabase.from("users_wallet").insert({
-        user_uid: uid,
-        tan: 0,
-        acset: 0,
-      });
-
-      if (error) return false;
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
-  // ============================================================================
-  // ✅ LOGIN FINAL — RLS SAFE — SESSION SAFE — PROD READY
+  // ✅ LOGIN FINAL — 100 % CONFORME À public.users + RLS + FLUX
   // ============================================================================
   const handleLogin = async () => {
     if (loading) return;
@@ -106,7 +80,7 @@ export default function LoginScreen() {
     }
 
     try {
-      // ✅ 1. AUTH D’ABORD (OBLIGATOIRE AVANT TOUT ACCÈS RLS)
+      // ✅ 1. AUTH SUPABASE
       const { data: authData, error: loginErr } =
         await supabase.auth.signInWithPassword({
           email: cleanEmail,
@@ -117,7 +91,7 @@ export default function LoginScreen() {
         if (loginErr.message.includes("Invalid")) {
           return showAlert(
             "Identifiants incorrects",
-            "Le mot de passe est incorrect."
+            "Adresse e-mail ou mot de passe incorrect."
           );
         }
 
@@ -136,66 +110,58 @@ export default function LoginScreen() {
         return showAlert("Erreur critique", "Session invalide.");
       }
 
-      // ✅ 2. PROFIL UTILISATEUR APRÈS AUTH
-      const { data: userData, error: profileErr } = await supabase
+      // ✅ 2. LECTURE PROFIL USER (RLS SAFE)
+      const { data: userData } = await supabase
         .from("users")
-        .select("*")
+        .select("uid, contract_accepted")
         .eq("uid", userId)
         .maybeSingle();
 
-      if (profileErr) {
-        return showAlert(
-          "Erreur profil",
-          "Impossible de charger votre compte."
-        );
-      }
-
-      // ✅ 3. CRÉATION SI ABSENT (RLS SAFE)
+      // ✅ 3. INSERT SI ABSENT — STRICTEMENT CONFORME À public.users
       if (!userData) {
         const { error: insertErr } = await supabase.from("users").insert({
           uid: userId,
           email: cleanEmail,
           tan: 0,
           role: "user",
-          contract_accept: false,
-          created_at: new Date().toISOString(),
+          contract_accepted: false,
         });
 
         if (insertErr) {
+          console.log("INSERT USER ERROR:", insertErr);
           return showAlert(
             "Erreur création compte",
             "Impossible d'initialiser votre compte."
           );
         }
+
+        showAlert("Connexion réussie", "Bienvenue dans RHAZN.", "success");
+
+        setTimeout(() => {
+          router.replace("/contract");
+        }, 700);
+
+        return;
       }
 
-      // ✅ 4. WALLET
-      const walletOK = await ensureUserWallet(userId);
-      if (!walletOK) {
-        return showAlert(
-          "Erreur portefeuille",
-          "Impossible de charger votre portefeuille RHAZN."
-        );
-      }
-
+      // ✅ 4. REDIRECTION DYNAMIQUE SELON L'ÉTAT DU CONTRAT
       showAlert("Connexion réussie", "Bienvenue dans RHAZN.", "success");
 
       setTimeout(() => {
-        setAlert(null);
-        router.replace("/contract");
+        router.replace(
+          userData.contract_accepted ? "/flux-intro" : "/contract"
+        );
       }, 700);
-    } catch {
-      showAlert(
-        "Erreur critique",
-        "Une erreur inattendue s'est produite."
-      );
+    } catch (e) {
+      console.log("LOGIN ERROR:", e);
+      showAlert("Erreur critique", "Une erreur inattendue s'est produite.");
     } finally {
       setLoading(false);
     }
   };
 
   // ============================================================================
-  // 🔒 BIOMÉTRIE
+  // 🔒 BIOMÉTRIE — SESSION UNIQUEMENT
   // ============================================================================
   const handleBiometricsLogin = async () => {
     try {
@@ -217,7 +183,7 @@ export default function LoginScreen() {
       if (!data.session)
         return showAlert(
           "Première connexion requise",
-          "Veuillez vous connecter une première fois avec votre mot de passe."
+          "Veuillez vous connecter une première fois."
         );
 
       router.replace("/flux-intro");

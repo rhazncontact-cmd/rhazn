@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
     Animated,
     KeyboardAvoidingView,
@@ -8,6 +8,7 @@ import {
     TextInput,
     View,
 } from "react-native";
+import { supabase } from "../../lib/supabase";
 
 const TARGET_TEXT = "Le Baobab";
 
@@ -23,11 +24,25 @@ const COLORS = {
 
 export default function SignaturePremiumScreen() {
   const router = useRouter();
+
   const [value, setValue] = useState("");
   const [alert, setAlert] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [locked, setLocked] = useState(false);
 
   const successScale = useRef(new Animated.Value(0)).current;
+
+  // ✅ SESSION OBLIGATOIRE (RLS SAFE)
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data, error }) => {
+      if (error || !data.user) {
+        router.replace("/auth/login");
+      } else {
+        setUserId(data.user.id);
+      }
+    });
+  }, []);
 
   const showAlert = (msg: string, error = false) => {
     setIsError(error);
@@ -35,35 +50,70 @@ export default function SignaturePremiumScreen() {
     setTimeout(() => setAlert(null), 3000);
   };
 
-  // ✅ BLOCAGE DU COLLAGE
-  const handleChange = (text: string) => {
+  // ✅ ANTI-COLLAGE + VALIDATION STRICTE
+  const handleChange = async (text: string) => {
+    if (locked) return;
+
+    // 🔒 Anti-collage
     if (text.length - value.length > 1) {
-      showAlert("❌ Le collage est désactivé. Veuillez taper manuellement.", true);
+      showAlert(
+        "❌ Le collage est désactivé. Veuillez taper manuellement.",
+        true
+      );
       return;
     }
 
     setValue(text);
 
-    // ✅ VALIDATION AUTOMATIQUE STRICTE
+    // ✅ TEXTE EXACT
     if (text === TARGET_TEXT) {
+      if (!userId) {
+        showAlert("Session invalide. Veuillez vous reconnecter.", true);
+        return;
+      }
+
+      setLocked(true);
+
       Animated.timing(successScale, {
         toValue: 1,
         duration: 600,
         useNativeDriver: true,
       }).start();
 
-      showAlert("✅ Signature validée avec succès.", false);
+      try {
+        // ✅ ✅ UPDATE BASE — COLONNES 100 % CONFORMES
+        const { error } = await supabase
+          .from("users")
+          .update({
+            contract_accepted: true,
+            contract_accepted_at: new Date().toISOString(),
+          })
+          .eq("uid", userId);
 
-      setTimeout(() => {
-        router.replace("/flux-intro");
-      }, 1100);
+        if (error) {
+          console.log("SIGNATURE_DB_ERROR:", error);
+          showAlert("Erreur interne lors de la validation.", true);
+          setLocked(false);
+          return;
+        }
+
+        showAlert("✅ Signature juridique validée avec succès.", false);
+
+        // ✅ REDIRECTION FINALE
+        setTimeout(() => {
+          router.replace("/flux-intro");
+        }, 1100);
+      } catch (e) {
+        console.log("SIGNATURE_FATAL:", e);
+        showAlert("Erreur réseau. Réessayez plus tard.", true);
+        setLocked(false);
+      }
     }
 
-    // ❌ ERREUR SI TEXTE COMPLET MAIS INCORRECT
+    // ❌ TEXTE COMPLET MAIS FAUX
     if (text.length >= TARGET_TEXT.length && text !== TARGET_TEXT) {
       showAlert(
-        "❌ Texte incorrect",
-        `Le texte doit être écrit exactement comme suit :\n${TARGET_TEXT}`,
+        `❌ Texte incorrect.\nLe texte exact est :\n${TARGET_TEXT}`,
         true
       );
     }
@@ -87,6 +137,7 @@ export default function SignaturePremiumScreen() {
             onChangeText={handleChange}
             autoCapitalize="none"
             autoCorrect={false}
+            editable={!locked}
             placeholder="Tapez ici..."
             placeholderTextColor={COLORS.gray}
             style={[

@@ -16,7 +16,6 @@ import * as Device from "expo-device";
 import { supabase } from "../../lib/supabase";
 import LoaderRhazn from "../components/LoaderRhazn";
 import { isHumanTime } from "../utils/antibot";
-import { generateCode } from "../utils/generateCode";
 
 // 🎨 PALETTE RHAZN — APPLE TYPE
 const COLORS = {
@@ -58,29 +57,11 @@ export default function RegisterScreen() {
   };
 
   const showNetError = () => {
-    showAlert(
-      "Vérifiez votre connexion internet pour continuer.",
-      true
-    );
-  };
-
-  // ✅ Vérification stricte du doublon email
-  const emailAlreadyExists = async (mail: string) => {
-    try {
-      const { data } = await supabase
-        .from("users")
-        .select("email")
-        .eq("email", mail)
-        .maybeSingle();
-
-      return !!data;
-    } catch {
-      return false;
-    }
+    showAlert("Vérifiez votre connexion internet pour continuer.", true);
   };
 
   // ============================================================================
-  // ✅ INSCRIPTION RHAZN — VERSION FINALE RLS SAFE
+  // ✅ REGISTER FINAL — 100 % CONFORME `public.users`
   // ============================================================================
   const handleRegister = async () => {
     if (loading) return;
@@ -95,7 +76,7 @@ export default function RegisterScreen() {
     }
 
     if (!isHumanTime(startTime)) {
-      return showAlert("Action trop rapide. Veuillez réessayer calmement.");
+      return showAlert("Action trop rapide. Veuillez réessayer.");
     }
 
     if (!mail || !password || !confirm) {
@@ -115,15 +96,7 @@ export default function RegisterScreen() {
     }
 
     try {
-      // ✅ 1. Vérification stricte du doublon
-      const exists = await emailAlreadyExists(mail);
-      if (exists) {
-        return showAlert(
-          "Cette adresse e-mail est déjà enregistrée. Veuillez vous connecter."
-        );
-      }
-
-      // ✅ 2. Création du compte AUTH (PAS encore dans public.users)
+      // ✅ 1. CRÉATION AUTH (unicité gérée par Supabase)
       const { data: signUpData, error: signUpError } =
         await supabase.auth.signUp({
           email: mail,
@@ -131,80 +104,38 @@ export default function RegisterScreen() {
         });
 
       if (signUpError || !signUpData.user) {
-        return showAlert(
-          "Impossible de créer votre compte pour le moment."
-        );
+        if (signUpError?.message?.includes("already")) {
+          return showAlert("Cette adresse e-mail est déjà enregistrée.");
+        }
+        return showAlert("Impossible de créer votre compte.");
       }
 
       const uid = signUpData.user.id;
 
-      // ✅ 3. Enregistrement profil (table users) — RLS SAFE
-      const { error: insertProfileError } =
-        await supabase.from("users").insert({
+      // ✅ 2. CRÉATION `public.users` — EXACT MATCH DB
+      const { error: insertProfileError } = await supabase
+        .from("users")
+        .insert({
           uid,
           email: mail,
           tan: 0,
           role: "user",
-          contract_accept: false,
-          created_at: new Date().toISOString(),
+          contract_accepted: false,
         });
 
       if (insertProfileError) {
-        return showAlert(
-          "Erreur d'initialisation du profil utilisateur."
-        );
+        return showAlert("Erreur d'initialisation du compte.");
       }
 
-      // ✅ 4. Génération + stockage du code de vérification
-      const code = generateCode();
-
-      const { error: codeError } = await supabase
-        .from("email_verification_codes")
-        .insert({
-          email: mail,
-          code,
-          device_id: deviceId,
-          expires_at: new Date(Date.now() + 10 * 60 * 1000),
-          created_at: new Date(),
-        });
-
-      if (codeError) {
-        return showAlert(
-          "Impossible de générer le code de vérification."
-        );
-      }
-
-      // ✅ 5. Envoi du code par Function
-      const { error: sendError } =
-        await supabase.functions.invoke("send-code", {
-          body: { email: mail, device_id: deviceId },
-        });
-
-      if (sendError) {
-        if (sendError.message.includes("Network request failed")) {
-          return showNetError();
-        }
-
-        return showAlert(
-          "Impossible d’envoyer le code pour le moment."
-        );
-      }
-
-      // ✅ 6. Succès
-      showAlert(
-        "Code envoyé avec succès. Vérifiez votre e-mail.",
-        false
-      );
+      // ✅ 3. CONFIRMATION E-MAIL SUPABASE AUTO
+      showAlert("Compte créé. Vérifiez votre e-mail.", false);
 
       setTimeout(() => {
         setAlert(null);
-        router.push({
-          pathname: "/auth/send-code",
-          params: { email: mail },
-        });
-      }, 900);
+        router.replace("/auth/login");
+      }, 1200);
     } catch (e: any) {
-      if (String(e?.message || "").includes("Network request failed")) {
+      if (String(e?.message || "").includes("Network")) {
         showNetError();
       } else {
         showAlert("Erreur lors de l’inscription.");
@@ -231,9 +162,7 @@ export default function RegisterScreen() {
 
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>Créer un compte</Text>
-        <Text style={styles.subtitle}>
-          Inscription sécurisée RHAZN
-        </Text>
+        <Text style={styles.subtitle}>Inscription sécurisée RHAZN</Text>
 
         {/* Honeypot invisible */}
         <TextInput
@@ -298,9 +227,7 @@ export default function RegisterScreen() {
           style={[
             styles.alert,
             {
-              borderColor: alert.isError
-                ? COLORS.crimson
-                : COLORS.green,
+              borderColor: alert.isError ? COLORS.crimson : COLORS.green,
               bottom: 56,
             },
           ]}
@@ -311,9 +238,7 @@ export default function RegisterScreen() {
               style={[
                 styles.alertClose,
                 {
-                  color: alert.isError
-                    ? COLORS.crimson
-                    : COLORS.green,
+                  color: alert.isError ? COLORS.crimson : COLORS.green,
                 },
               ]}
             >

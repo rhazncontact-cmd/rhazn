@@ -5,10 +5,9 @@ import {
   Animated,
   Easing,
   Image,
-  StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { supabase } from "../../lib/supabase";
 import LoaderRhazn from "../components/LoaderRhazn";
@@ -77,40 +76,23 @@ export default function SendCodeScreen() {
   };
 
   const showNetError = () => {
-    showAlert(
-      "Vérifiez votre connexion internet pour continuer.",
-      true
-    );
+    showAlert("Vérifiez votre connexion internet pour continuer.", true);
   };
 
-  // ✅ ✅ ✅ RENVOI CODE — VERSION FINALE ROBUSTE
+  // ✅ RENVOI CODE — VERSION 100 % RLS SAFE
   const resendCode = async () => {
     if (loading || !email) return;
     setLoading(true);
     setResendTimer(60);
 
     try {
-      // 🔐 1. Vérification email
-      const { data: emailExists } = await supabase
-        .from("users")
-        .select("email")
-        .eq("email", email)
-        .maybeSingle();
-
-      if (!emailExists) {
-        return showAlert(
-          "Adresse e-mail invalide. Veuillez vous réinscrire.",
-          true
-        );
-      }
-
-      // 🔐 2. Invalider anciens codes
+      // 🔐 1. Invalider anciens codes
       await supabase
         .from("email_verification_codes")
         .delete()
         .eq("email", email);
 
-      // 🔐 3. Envoi via Function
+      // 🔐 2. Envoi via Function
       const { error: sendError } =
         await supabase.functions.invoke("send-code", {
           body: { email, device_id: deviceId },
@@ -237,115 +219,3 @@ export default function SendCodeScreen() {
     </View>
   );
 }
-
-// ✅ STYLES FINALS — APPLE TYPE PREMIUM
-const styles = StyleSheet.create({
-  full: {
-    flex: 1,
-    backgroundColor: COLORS.black,
-    justifyContent: "center",
-  },
-
-  logoWrapper: {
-    position: "absolute",
-    top: 40,
-    right: 24,
-    zIndex: 20,
-  },
-
-  logo: {
-    width: 48,
-    height: 48,
-    resizeMode: "contain",
-    opacity: 0.95,
-  },
-
-  container: {
-    marginHorizontal: 20,
-    paddingHorizontal: 24,
-    paddingVertical: 40,
-    alignItems: "center",
-    backgroundColor: COLORS.goldSoft,
-    borderRadius: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.35,
-    shadowRadius: 18,
-    elevation: 12,
-  },
-
-  circle: {
-    width: 180,
-    height: 180,
-    borderRadius: 999,
-    borderWidth: 3,
-    marginBottom: 40,
-  },
-
-  title: {
-    color: COLORS.black,
-    fontSize: 32,
-    fontWeight: "800",
-    marginBottom: 6,
-  },
-
-  subtitle: {
-    color: "#333",
-    fontSize: 14,
-  },
-
-  email: {
-    color: COLORS.black,
-    fontWeight: "700",
-    marginBottom: 20,
-  },
-
-  desc: {
-    color: "#444",
-    fontSize: 14,
-    textAlign: "center",
-    marginBottom: 30,
-  },
-
-  verifyButton: {
-    backgroundColor: COLORS.white,
-    width: "100%",
-    paddingVertical: 15,
-    borderRadius: 999,
-    marginBottom: 8,
-  },
-
-  verifyText: {
-    color: COLORS.black,
-    textAlign: "center",
-    fontWeight: "700",
-    fontSize: 16,
-  },
-
-  timer: {
-    color: COLORS.gray,
-    marginTop: 15,
-  },
-
-  resend: {
-    color: COLORS.black,
-    fontWeight: "700",
-    textAlign: "center",
-    marginTop: 10,
-  },
-
-  alertCard: {
-    marginTop: 12,
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: "#0f0f0f",
-  },
-
-  alertText: {
-    fontWeight: "600",
-    fontSize: 12,
-    textAlign: "center",
-  },
-});

@@ -4,7 +4,6 @@ import {
   Animated,
   Image,
   KeyboardAvoidingView,
-  PanResponder,
   StyleSheet,
   Text,
   TextInput,
@@ -28,7 +27,7 @@ const COLORS = {
 const RESEND_COOLDOWN = 60;
 
 export default function VerifyCodeScreen() {
-  const { email, password } = useLocalSearchParams();
+  const { email } = useLocalSearchParams<{ email: string }>();
   const router = useRouter();
 
   const [code, setCode] = useState(["", "", "", "", "", ""]);
@@ -36,64 +35,21 @@ export default function VerifyCodeScreen() {
   const [loading, setLoading] = useState(false);
   const [alert, setAlert] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
-
-  const [attempts, setAttempts] = useState(0);
-  const [locked, setLocked] = useState(false);
   const [cooldown, setCooldown] = useState(RESEND_COOLDOWN);
 
-  const glow = useRef(new Animated.Value(0)).current;
   const successScale = useRef(new Animated.Value(0)).current;
-  const panY = useRef(new Animated.Value(0)).current;
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderMove: Animated.event([null, { dy: panY }], {
-        useNativeDriver: false,
-      }),
-      onPanResponderRelease: () => {
-        Animated.spring(panY, {
-          toValue: 0,
-          useNativeDriver: false,
-        }).start();
-      },
-    })
-  ).current;
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(glow, {
-          toValue: 1,
-          duration: 1200,
-          useNativeDriver: false,
-        }),
-        Animated.timing(glow, {
-          toValue: 0,
-          duration: 1200,
-          useNativeDriver: false,
-        }),
-      ])
-    ).start();
-  }, []);
-
+  // ✅ Cooldown du renvoi
   useEffect(() => {
     if (cooldown <= 0) return;
-    const i = setInterval(() => setCooldown((c) => c - 1), 1000);
-    return () => clearInterval(i);
+    const timer = setInterval(() => setCooldown((c) => c - 1), 1000);
+    return () => clearInterval(timer);
   }, [cooldown]);
 
-  const showAlert = (
-    title: string,
-    message: string,
-    solution?: string,
-    error = false
-  ) => {
+  const showAlert = (msg: string, error = false) => {
     setIsError(error);
-    setAlert(
-      `${title}\n${message}${solution ? "\n✅ Solution : " + solution : ""}`
-    );
-    setTimeout(() => setAlert(null), 5000);
+    setAlert(msg);
+    setTimeout(() => setAlert(null), 3500);
   };
 
   const triggerSuccess = () => {
@@ -104,31 +60,17 @@ export default function VerifyCodeScreen() {
     }).start();
   };
 
-  const failAttempt = (title: string, message: string, solution?: string) => {
-    setIsError(true);
-    setAttempts((a) => a + 1);
-    showAlert(title, message, solution, true);
-    Vibration.vibrate(120);
-    setLoading(false);
-
-    if (attempts + 1 >= 3) {
-      setLocked(true);
-      showAlert(
-        "🔒 Compte temporairement verrouillé",
-        "Trop de tentatives incorrectes.",
-        "Attendez 3 minutes ou demandez un nouveau code.",
-        true
-      );
-    }
-  };
-
+  // ✅ Auto-collage & auto-focus intelligent
   const handleDigit = (value: string, index: number) => {
     if (value.length > 1) {
       const chars = value.replace(/\D/g, "").split("").slice(0, 6);
       const filled = [...code];
       chars.forEach((c, i) => (filled[i] = c));
       setCode(filled);
-      if (chars.length === 6) verifyCode(chars.join(""));
+
+      if (chars.length === 6) {
+        verifyCode(chars.join(""));
+      }
       return;
     }
 
@@ -142,141 +84,72 @@ export default function VerifyCodeScreen() {
     if (!value && index > 0) inputs.current[index - 1]?.focus();
 
     const joined = newCode.join("");
-    if (joined.length === 6 && !joined.includes("")) verifyCode(joined);
+    if (joined.length === 6 && !joined.includes("")) {
+      verifyCode(joined);
+    }
   };
 
+  // ✅ VERIFY FINAL — STABLE, SANS SESSION FORCÉE
   const verifyCode = async (forcedCode?: string) => {
     if (loading) return;
+    setLoading(true);
 
     const finalCode = forcedCode || code.join("");
 
-    if (finalCode.length !== 6) {
-      showAlert("⚠️ Code incomplet", "Veuillez entrer les 6 chiffres.", "", true);
+    if (finalCode.length !== 6 || !email) {
+      showAlert("Code incomplet ou email absent.", true);
+      setLoading(false);
       return;
     }
-
-    if (!email) {
-      showAlert("❌ Email manquant", "Retournez à l’inscription.", "", true);
-      return;
-    }
-
-    setLoading(true);
 
     try {
-      const { data } = await supabase
-        .from("email_otps")
+      // ✅ 1. Vérification OTP
+      const { data: otpData } = await supabase
+        .from("email_verification_codes")
         .select("*")
         .eq("email", email)
         .eq("code", finalCode)
-        .order("created_at", { ascending: false })
+        .gt("expires_at", new Date().toISOString())
         .maybeSingle();
 
-      if (!data)
-        return failAttempt(
-          "❌ Code incorrect",
-          "Code invalide.",
-          "Vérifiez votre email."
-        );
-
-      const { data: authData } = await supabase.auth.signUp({
-        email: email as string,
-        password: password as string,
-      });
-
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      const uid = user?.id ?? authData?.user?.id;
-      if (!uid) throw new Error("UID introuvable");
-
-      const { data: userRow, error: upsertError } = await supabase
-        .from("users")
-        .upsert(
-          {
-            uid,
-            email,
-            tan: 0,
-            role: "user",
-            contract_accepted: false,
-          },
-          { onConflict: "uid" }
-        )
-        .select("contract_accepted")
-        .single();
-
-      if (upsertError) {
-        console.log("UPSERT_ERROR:", upsertError);
-        showAlert(
-          "❌ Erreur interne",
-          "Initialisation impossible.",
-          "Veuillez réessayer plus tard.",
-          true
-        );
+      if (!otpData) {
+        Vibration.vibrate(120);
+        showAlert("Code incorrect ou expiré.", true);
+        setLoading(false);
         return;
       }
 
-      const contractAccepted = userRow?.contract_accepted ?? false;
-
+      // ✅ 2. Succès visuel
       triggerSuccess();
-      showAlert(
-        "✅ Vérification réussie",
-        "Compte activé.",
-        contractAccepted
-          ? "Accès à RHAZN."
-          : "Veuillez accepter le contrat.",
-        false
-      );
+      showAlert("Compte activé avec succès.");
 
+      // ✅ 3. Redirection vers LOGIN (session propre)
       setTimeout(() => {
-        router.replace(
-          contractAccepted ? "/flux-intro" : "/legal/contract"
-        );
+        router.replace("/auth/login");
       }, 1200);
     } catch (e) {
-      console.log("VERIFY_ERROR:", e);
-      showAlert(
-        "🌐 Erreur réseau",
-        "Serveur injoignable.",
-        "Vérifiez votre connexion.",
-        true
-      );
+      console.log("VERIFY_FATAL_ERROR:", e);
+      showAlert("Erreur serveur. Réessayez plus tard.", true);
     } finally {
       setLoading(false);
     }
   };
 
+  // ✅ RESEND FINAL SAFE
   const resendCode = async () => {
-    if (cooldown > 0) return;
+    if (cooldown > 0 || !email) return;
     setCooldown(RESEND_COOLDOWN);
 
     try {
-      await fetch(
-        "https://mxxlchaygarszkygmylo.functions.supabase.co/send-code",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization:
-              "Bearer " + process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
-          },
-          body: JSON.stringify({ email }),
-        }
-      );
+      const { error } = await supabase.functions.invoke("send-code", {
+        body: { email },
+      });
 
-      showAlert(
-        "📨 Code envoyé",
-        "Nouveau code transmis.",
-        "Vérifiez votre messagerie.",
-        false
-      );
+      if (error) throw error;
+
+      showAlert("Nouveau code envoyé.");
     } catch {
-      showAlert(
-        "🌐 Connexion échouée",
-        "Impossible de renvoyer le code.",
-        "Réessayez plus tard.",
-        true
-      );
+      showAlert("Impossible de renvoyer le code.", true);
     }
   };
 
@@ -289,10 +162,7 @@ export default function VerifyCodeScreen() {
         style={styles.logo}
       />
 
-      <Animated.View
-        {...panResponder.panHandlers}
-        style={[styles.container, { transform: [{ translateY: panY }] }]}
-      >
+      <View style={styles.container}>
         <Text style={styles.title}>Vérification Sécurisée</Text>
         <Text style={styles.email}>{email}</Text>
 
@@ -360,11 +230,12 @@ export default function VerifyCodeScreen() {
         >
           <Text style={styles.successText}>✅</Text>
         </Animated.View>
-      </Animated.View>
+      </View>
     </KeyboardAvoidingView>
   );
 }
 
+// ✅ STYLES
 const styles = StyleSheet.create({
   full: { flex: 1, backgroundColor: COLORS.black },
   logo: {
@@ -374,7 +245,6 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     opacity: 0.9,
-    zIndex: 10,
   },
   container: { marginTop: 160, paddingHorizontal: 26 },
   title: { color: COLORS.white, fontSize: 32, textAlign: "center" },

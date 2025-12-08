@@ -1,324 +1,422 @@
-import CheckBox from "expo-checkbox";
-import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import {
-    BackHandler,
+    Image,
+    KeyboardAvoidingView,
+    Platform,
     ScrollView,
     StyleSheet,
     Text,
     TouchableOpacity,
     View,
 } from "react-native";
+
 import { supabase } from "../../lib/supabase";
 import LoaderRhazn from "../components/LoaderRhazn";
 
-// 🎨 PALETTE APPLE-TYPE RHAZN
+// 🎨 PALETTE RHAZN PREMIUM
 const COLORS = {
   black: "#000000",
-  dark: "#0E0E0E",
-  white: "#FFFFFF",
-  gray: "#AAAAAA",
-  green: "#00C853",
-  crimson: "#B00020",
   card: "#101010",
+  cardSoft: "#151515",
+  white: "#FFFFFF",
+  gray: "#9A9A9A",
+  softGray: "#BEBEBE",
+  gold: "#D4AF37",
+  red: "#C62828",
+  border: "#1E1E1E",
 };
+
+// 📝 CONTRAT – TEXTE BRUT (inchangé)
+const CONTRACT_TEXT = `
+📜 CONDITIONS GÉNÉRALES D’UTILISATION & D’INTÉGRATION
+DE L’ÉCOSYSTÈME RHAZN®
+
+Plateforme : RHAZN®
+Document exécutoire à compter du : {{DATE_AUTOMATIQUE}}
+Version : CGUI–RHAZN–V1.0
+
+1. DÉFINITIONS
+Au sens des présentes Conditions :
+RHAZN® : désigne l’écosystème numérique, économique, créatif et technologique opéré sous l’autorité exclusive de RHAZN.
+Utilisateur : toute personne physique ou morale disposant d’un compte RHAZN.
+Créateur : tout utilisateur publiant ou soumettant un contenu.
+Contenu : toute œuvre sous forme de vidéo, audio, image, texte, donnée, ou média numérique.
+CADNA : Commission d’Analyse, de Déontologie et de Normalisation des Activités.
+RHAZN ADMIN : autorité suprême de gouvernance, de régulation et de décision.
+Intégration : admission officielle dans l’écosystème RHAZN.
+
+2. ACCEPTATION OBLIGATOIRE
+L’accès, l’inscription, l’utilisation et l’intégration dans l’écosystème RHAZN impliquent l’acceptation pleine, entière, irrévocable et sans réserve des présentes CGUI.
+Sans acceptation :
+❌ Aucun accès au contenu
+❌ Aucune publication
+❌ Aucune monétisation
+❌ Aucun statut dans RHAZN
+
+3. NATURE DE L’ÉCOSYSTÈME RHAZN
+RHAZN est un écosystème :
+• Numérique
+• Créatif
+• Économique
+• De monétisation du mérite, du temps et des œuvres
+RHAZN n’est ni une banque, ni un établissement financier, et ne garantit aucun revenu fixe.
+
+4. INTÉGRATION & CARACTÈRE MONÉTISABLE DU COMPTE
+Tout compte RHAZN est :
+✅ Obligatoirement monétisable
+✅ Intégré dans le système économique interne
+❌ Ne peut être utilisé à titre strictement privé ou gratuit
+Toute tentative de contournement du système économique entraîne :
+• Suspension immédiate
+• Résiliation définitive
+• Perte des avantages acquis
+
+5. EXCLUSIVITÉ ABSOLUE DES CONTENUS
+⚠️ CLAUSE FONDAMENTALE
+Tout Utilisateur reconnaît expressément que :
+Tout contenu publié, diffusé, stocké ou exploité sur RHAZN devient exclusivement réservé à l’écosystème RHAZN.
+Il est formellement interdit, pour quelque motif que ce soit, y compris personnel, commercial, promotionnel, caritatif ou artistique, de :
+• Publier
+• Dupliquer
+• Rediffuser
+• Vendre
+• Céder
+• Exploiter
+• Partager
+tout contenu issu de RHAZN sur :
+• Une autre plateforme
+• Un autre réseau social
+• Un site personnel
+• Une diffusion privée ou publique extérieure à RHAZN
+
+❌ TOUTE VIOLATION ENTRAÎNE AUTOMATIQUEMENT :
+• Radiation définitive du système
+• Suppression du compte sans préavis
+• Perte irréversible de tous les soldes, avantages et droits
+• Poursuites civiles et/ou pénales si nécessaire
+
+6. SOUMISSION DES CONTENUS & CADNA
+Tout contenu soumis à RHAZN est obligatoirement examiné par la :
+CADNA — Commission d’Analyse, de Déontologie et de Normalisation des Activités
+Mission de la CADNA :
+• Analyse préalable des contenus
+• Contrôle éthique, moral, juridique
+• Protection des mineurs
+• Protection de l’image et de la philosophie RHAZN
+Aucun contenu n’est publié sans validation préalable de la CADNA.
+Les décisions de la CADNA :
+• Sont exécutoires immédiatement
+• Peuvent être confirmées, modifiées ou annulées par RHAZN ADMIN
+• Ne constituent pas un droit acquis à publication
+
+7. DÉLAIS DE PUBLICATION
+L’Utilisateur reconnaît que la publication :
+• N’est jamais immédiate
+• Est soumise à un délai d’analyse indicatif de 24 à 72 heures
+• Peut être prolongée sans obligation de justification
+
+8. MODÉRATION, SIGNALEMENT & ÉCLAIREURS
+RHAZN dispose :
+• D’un système de signalement communautaire (Éclaireurs)
+• D’un pouvoir de modération souverain
+• D’un droit de retrait immédiat de tout contenu
+Les décisions de modération sont souveraines, exécutoires et sans appel obligatoire.
+
+9. SANCTIONS GÉNÉRALES
+RHAZN peut, sans préavis :
+• Avertir
+• Restreindre
+• Suspendre
+• Résilier
+• Bannir définitivement tout compte
+En cas de :
+• Fraude
+• Plagiat
+• Diffamation
+• Contournement du système
+• Violation des présentes CGUI
+• Atteinte à la philosophie RHAZN
+
+10. DONNÉES, IMAGE & DROITS D’EXPLOITATION
+L’Utilisateur autorise RHAZN à :
+• Stocker ses données
+• Utiliser son image de profil
+• Exploiter techniquement ses contenus dans le cadre du fonctionnement interne
+Cette autorisation est :
+• Mondiale
+• Gratuite
+• Non exclusive pour l’exploitation technique
+• Limitée au périmètre de RHAZN
+
+11. RESPONSABILITÉ DE L’UTILISATEUR
+L’Utilisateur est seul responsable :
+• Du contenu qu’il soumet
+• De la légalité de ses œuvres
+• De ses actes sur la plateforme
+• Du respect des lois locales et internationales
+
+12. RESPONSABILITÉ LIMITÉE DE RHAZN
+RHAZN ne saurait être tenue responsable :
+• Des pertes financières indirectes
+• Des rejets de contenus
+• Des suspensions de comptes
+• Des fluctuations de gains
+• Des décisions de la CADNA
+
+13. PROPRIÉTÉ DU COMPTE
+Tout compte RHAZN est une licence d’accès révocable.
+Il demeure la propriété exclusive de RHAZN.
+
+14. CONFIDENTIALITÉ & ARCHIVAGE
+Tous les traitements internes, décisions, analyses et rapports :
+• Sont confidentiels
+• Peuvent être archivés à des fins juridiques
+
+15. MODIFICATION DES CONDITIONS
+RHAZN se réserve le droit de modifier à tout moment les présentes CGUI.
+Toute modification prend effet dès sa publication.
+L’usage continu vaut acceptation tacite.
+
+16. DROIT APPLICABLE & JURIDICTION
+Les présentes Conditions sont soumises au droit choisi par RHAZN, indépendamment du pays de résidence de l’Utilisateur.
+Tout litige relève de la juridiction exclusive désignée par RHAZN.
+
+17. ACCEPTATION FINALE NUMÉRIQUE
+En validant son intégration, l’Utilisateur reconnaît :
+☑️ Avoir lu intégralement les présentes Conditions
+☑️ Les comprendre
+☑️ Les accepter sans réserve
+☑️ Reconnaître l’autorité suprême de RHAZN ADMIN
+☑️ Accepter l’exclusivité absolue de ses contenus au sein de RHAZN
+
+🏷️ MENTION LÉGALE FINALE
+RHAZN® — Écosystème Officiel de Monétisation et d’Exclusivité du Mérite
+© RHAZN — Tous droits réservés — {{ANNÉE_AUTOMATIQUE}}
+`;
 
 export default function ContractScreen() {
   const router = useRouter();
+  const [checking, setChecking] = useState(true);
 
-  const [loading, setLoading] = useState(false);
-  const [checked, setChecked] = useState(false);
-  const [alert, setAlert] = useState<string | null>(null);
+  // ✅ Vérifier qu’un user est connecté (RLS safe)
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data, error }) => {
+      if (error || !data.user) {
+        router.replace("/auth/login");
+      } else {
+        setChecking(false);
+      }
+    });
+  }, []);
 
-  // ✅ Blocage du bouton retour Android
-  useFocusEffect(
-    useCallback(() => {
-      const onBackPress = () => true;
-      BackHandler.addEventListener("hardwareBackPress", onBackPress);
-      return () =>
-        BackHandler.removeEventListener("hardwareBackPress", onBackPress);
-    }, [])
-  );
-
-  const showAlert = (msg: string) => {
-    setAlert(msg);
-    setTimeout(() => setAlert(null), 3000);
+  const handleAccept = () => {
+    // ✅ On ne marque PAS le contrat comme accepté ici.
+    // La validation juridique finale se fait sur /legal/signature
+    router.replace("/legal/signature");
   };
 
-  // ============================================================================
-  // ✅ ACCEPTATION JURIDIQUE FINALE — 100 % CONFORME `public.users`
-  // ============================================================================
-  const handleAccept = async () => {
-    if (loading) return;
-
-    if (!checked) {
-      showAlert("Veuillez cocher la case pour accepter le contrat.");
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      // ✅ 1. Session Auth obligatoire
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
-
-      if (authError || !user) {
-        showAlert("Session expirée. Veuillez vous reconnecter.");
-        setLoading(false);
-        return;
-      }
-
-      // ✅ 2. Vérification utilisateur existant (RLS SAFE)
-      const { data: existingUser, error: fetchError } = await supabase
-        .from("users")
-        .select("uid")
-        .eq("uid", user.id)
-        .maybeSingle();
-
-      if (fetchError || !existingUser) {
-        console.log("FETCH_USER_ERROR:", fetchError);
-        showAlert("Compte introuvable. Réessayez.");
-        setLoading(false);
-        return;
-      }
-
-      // ✅ 3. UPDATE CONTRAT — NOMS DE COLONNES EXACTS
-      const { error: updateError } = await supabase
-        .from("users")
-        .update({
-          contract_accepted: true,
-          contract_accepted_at: new Date().toISOString(),
-        })
-        .eq("uid", user.id);
-
-      if (updateError) {
-        console.log("CONTRACT_UPDATE_ERROR:", updateError);
-        showAlert("Impossible d’enregistrer votre acceptation.");
-        setLoading(false);
-        return;
-      }
-
-      showAlert("Contrat accepté avec succès.");
-
-      // ✅ 4. Redirection vers l’étape suivante
-      setTimeout(() => {
-        router.replace("/legal/signature");
-      }, 900);
-    } catch (e) {
-      console.log("CONTRACT_FATAL:", e);
-      showAlert("Erreur réseau. Vérifiez votre connexion.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRefuse = () => {
+  const handleDecline = async () => {
+    // ❌ L’utilisateur refuse → déconnexion + retour login
+    await supabase.auth.signOut();
     router.replace("/auth/login");
   };
 
+  if (checking) {
+    return (
+      <View style={styles.loadingScreen}>
+        <LoaderRhazn />
+      </View>
+    );
+  }
+
   return (
-    <View style={styles.full}>
-      {/* ✅ EN-TÊTE FLOTTANT */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>
-          Conditions Générales d’Utilisation – RHAZN
-        </Text>
-        <Text style={styles.headerLogo}>RHAZN</Text>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      style={styles.full}
+    >
+      {/* Logo RHAZN */}
+      <View style={styles.logoWrapper}>
+        <Image
+          source={require("../../assets/images/rhazn-logo.png")}
+          style={styles.logo}
+        />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
-        {/* ========================= */}
-        {/* ✅ TEXTE JURIDIQUE FINAL */}
-        {/* ========================= */}
-
-        <Text style={styles.articleTitle}>
-          ARTICLE 1 — ACCEPTATION OBLIGATOIRE
-        </Text>
-        <Text style={styles.articleText}>
-          L’accès, l’inscription et l’utilisation de la plateforme RHAZN sont
-          strictement subordonnés à l’acceptation expresse du présent contrat.
-          Toute utilisation sans acceptation est juridiquement nulle et non
-          autorisée.
+      {/* Contenu principal */}
+      <View style={styles.main}>
+        <Text style={styles.heading}>Conditions d’intégration</Text>
+        <Text style={styles.subheading}>
+          Veuillez lire attentivement le contrat avant de continuer.
         </Text>
 
-        <Text style={styles.articleTitle}>
-          ARTICLE 2 — NATURE DES ACSET
-        </Text>
-        <Text style={styles.articleText}>
-          Les ACSET sont des unités internes de valeur propres à RHAZN. Ils sont
-          strictement non remboursables, non convertibles en monnaie légale et
-          n’ont aucune valeur fiduciaire externe.
-        </Text>
+        <View style={styles.card}>
+          {/* Bandeau "défiler" */}
+          <View style={styles.badgeRow}>
+            <Text style={styles.badgeText}>Document juridique RHAZN</Text>
+            <Text style={styles.badgeHint}>Faites défiler pour lire tout le contrat</Text>
+          </View>
 
-        <Text style={styles.articleTitle}>
-          ARTICLE 3 — MONÉTISATION AUTOMATIQUE
-        </Text>
-        <Text style={styles.articleText}>
-          Tout compte créé sur RHAZN est automatiquement intégré dans le système
-          économique interne. Des flux de valeur peuvent être générés sans
-          intervention directe de l’utilisateur.
-        </Text>
+          {/* Contrat scrollable */}
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={styles.contractText}>{CONTRACT_TEXT}</Text>
+          </ScrollView>
 
-        <Text style={styles.articleTitle}>
-          ARTICLE 4 — CONTENUS & CONTRÔLE
-        </Text>
-        <Text style={styles.articleText}>
-          Tous les contenus publiés sur RHAZN sont soumis à contrôle automatisé
-          et humain. RHAZN se réserve le droit de refuser, modifier ou supprimer
-          tout contenu sans justification préalable.
-        </Text>
-
-        <Text style={styles.articleTitle}>ARTICLE 5 — EXCLUSIVITÉ</Text>
-        <Text style={styles.articleText}>
-          Toute œuvre publiée sur RHAZN est exploitée sous licence exclusive de
-          la plateforme. Toute diffusion externe non autorisée est strictement
-          interdite.
-        </Text>
-
-        {/* ✅ CHECKBOX JURIDIQUE */}
-        <View style={styles.checkboxRow}>
-          <CheckBox
-            value={checked}
-            onValueChange={setChecked}
-            color={checked ? COLORS.green : undefined}
-          />
-          <Text style={styles.checkboxText}>
-            Je reconnais avoir lu, compris et accepté, sans réserve, les
-            Conditions Générales d’Utilisation de RHAZN.
-          </Text>
+          {/* Dégradé bas pour effet Apple */}
+          <View style={styles.gradientOverlay} pointerEvents="none" />
         </View>
-      </ScrollView>
-
-      {/* ✅ NOTIFICATION */}
-      {alert && (
-        <View style={styles.alertCard}>
-          <Text style={styles.alertText}>{alert}</Text>
-        </View>
-      )}
-
-      {/* ✅ BOUTON FINAL */}
-      <View style={styles.footer}>
-        {loading ? (
-          <LoaderRhazn />
-        ) : (
-          <>
-            <TouchableOpacity
-              style={[
-                styles.button,
-                { backgroundColor: checked ? COLORS.green : COLORS.dark },
-              ]}
-              onPress={checked ? handleAccept : handleRefuse}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.buttonText}>
-                {checked ? "REJOINDRE RHAZN" : "REFUSER ET QUITTER"}
-              </Text>
-            </TouchableOpacity>
-          </>
-        )}
       </View>
-    </View>
+
+      {/* Zone d’actions flottante premium */}
+      <View style={styles.actionsWrapper}>
+        <TouchableOpacity
+          style={styles.declineButton}
+          activeOpacity={0.85}
+          onPress={handleDecline}
+        >
+          <Text style={styles.declineText}>Refuser & quitter</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.acceptButton}
+          activeOpacity={0.9}
+          onPress={handleAccept}
+        >
+          <Text style={styles.acceptText}>Accepter & continuer</Text>
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
+// ============================================================================
+// STYLES — APPLE-LIKE PREMIUM
+// ============================================================================
 const styles = StyleSheet.create({
-  full: { flex: 1, backgroundColor: COLORS.black },
-
-  header: {
+  full: {
+    flex: 1,
+    backgroundColor: COLORS.black,
+  },
+  loadingScreen: {
+    flex: 1,
+    backgroundColor: COLORS.black,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  logoWrapper: {
     position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 80,
-    backgroundColor: COLORS.dark,
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-    zIndex: 10,
+    top: 42,
+    right: 26,
+    zIndex: 20,
   },
-
-  headerTitle: {
-    color: COLORS.white,
-    fontSize: 17,
-    fontWeight: "700",
+  logo: {
+    width: 46,
+    height: 46,
+    resizeMode: "contain",
+    opacity: 0.95,
   },
-
-  headerLogo: {
+  main: {
+    flex: 1,
+    paddingTop: 96,
+    paddingHorizontal: 22,
+  },
+  heading: {
     color: COLORS.white,
+    fontSize: 26,
     fontWeight: "800",
-  },
-
-  content: {
-    paddingTop: 100,
-    paddingHorizontal: 20,
-    paddingBottom: 160,
-  },
-
-  articleTitle: {
-    color: COLORS.white,
-    fontWeight: "800",
-    fontSize: 15,
-    marginTop: 22,
     marginBottom: 6,
   },
-
-  articleText: {
+  subheading: {
     color: COLORS.gray,
-    fontSize: 14,
-    lineHeight: 22,
+    fontSize: 13,
+    marginBottom: 18,
   },
-
-  checkboxRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 30,
+  card: {
+    flex: 1,
+    backgroundColor: COLORS.card,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingTop: 10,
+    paddingHorizontal: 16,
+    paddingBottom: 18,
+    overflow: "hidden",
   },
-
-  checkboxText: {
+  badgeRow: {
+    marginBottom: 8,
+  },
+  badgeText: {
+    color: COLORS.softGray,
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  badgeHint: {
     color: COLORS.gray,
-    marginLeft: 12,
+    fontSize: 11,
+    marginTop: 4,
+  },
+  scroll: {
     flex: 1,
   },
-
-  alertCard: {
-    position: "absolute",
-    bottom: 130,
-    left: 20,
-    right: 20,
-    backgroundColor: COLORS.card,
-    borderRadius: 14,
-    padding: 12,
-    alignItems: "center",
+  scrollContent: {
+    paddingTop: 8,
+    paddingBottom: 40,
   },
-
-  alertText: {
+  contractText: {
     color: COLORS.white,
     fontSize: 13,
-    textAlign: "center",
+    lineHeight: 20,
   },
-
-  footer: {
+  gradientOverlay: {
     position: "absolute",
-    bottom: 24,
-    left: 20,
-    right: 20,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 40,
+    backgroundColor: "rgba(0,0,0,0.55)",
   },
-
-  button: {
-    paddingVertical: 16,
+  actionsWrapper: {
+    paddingHorizontal: 22,
+    paddingBottom: Platform.OS === "android" ? 22 : 30, // au-dessus de la barre native
+    paddingTop: 8,
+    backgroundColor: "rgba(0,0,0,0.9)",
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  declineButton: {
+    width: "100%",
     borderRadius: 999,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: COLORS.red,
+    marginBottom: 10,
     alignItems: "center",
-    elevation: 8,
   },
-
-  buttonText: {
-    color: COLORS.white,
-    fontWeight: "800",
+  declineText: {
+    color: COLORS.red,
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  acceptButton: {
+    width: "100%",
+    borderRadius: 999,
+    paddingVertical: 15,
+    alignItems: "center",
+    backgroundColor: COLORS.gold,
+    shadowColor: "#000",
+    shadowOpacity: 0.4,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 14,
+    elevation: 10,
+  },
+  acceptText: {
+    color: COLORS.black,
+    fontWeight: "700",
     fontSize: 15,
   },
 });

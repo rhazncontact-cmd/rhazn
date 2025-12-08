@@ -64,11 +64,12 @@ export default function LoginScreen() {
   };
 
   // ============================================================================
-  // ✅ LOGIN FINAL — 100 % CONFORME À public.users + RLS + FLUX
+  // ✅ LOGIN FINAL — 100 % CONFORME À public.users + RLS + ROUTES
   // ============================================================================
   const handleLogin = async () => {
     if (loading) return;
     setLoading(true);
+    setAlert(null);
 
     const cleanEmail = email.trim().toLowerCase();
 
@@ -88,14 +89,14 @@ export default function LoginScreen() {
         });
 
       if (loginErr) {
-        if (loginErr.message.includes("Invalid")) {
+        if (loginErr.message.toLowerCase().includes("invalid")) {
           return showAlert(
             "Identifiants incorrects",
             "Adresse e-mail ou mot de passe incorrect."
           );
         }
 
-        if (loginErr.message.includes("Email not confirmed")) {
+        if (loginErr.message.toLowerCase().includes("confirm")) {
           return showAlert(
             "Compte non activé",
             "Veuillez confirmer votre e-mail."
@@ -111,13 +112,17 @@ export default function LoginScreen() {
       }
 
       // ✅ 2. LECTURE PROFIL USER (RLS SAFE)
-      const { data: userData } = await supabase
+      const { data: userData, error: readErr } = await supabase
         .from("users")
         .select("uid, contract_accepted")
         .eq("uid", userId)
         .maybeSingle();
 
-      // ✅ 3. INSERT SI ABSENT — STRICTEMENT CONFORME À public.users
+      if (readErr) {
+        console.log("READ USER ERROR:", readErr);
+      }
+
+      // ✅ 3. INSERT SI ABSENT (cas rare mais sécurisé)
       if (!userData) {
         const { error: insertErr } = await supabase.from("users").insert({
           uid: userId,
@@ -138,18 +143,20 @@ export default function LoginScreen() {
         showAlert("Connexion réussie", "Bienvenue dans RHAZN.", "success");
 
         setTimeout(() => {
-          router.replace("/contract");
+          router.replace("/legal/contract");
         }, 700);
 
         return;
       }
 
-      // ✅ 4. REDIRECTION DYNAMIQUE SELON L'ÉTAT DU CONTRAT
+      // ✅ 4. REDIRECTION DYNAMIQUE SELON LE CONTRAT
       showAlert("Connexion réussie", "Bienvenue dans RHAZN.", "success");
 
       setTimeout(() => {
         router.replace(
-          userData.contract_accepted ? "/flux-intro" : "/contract"
+          userData.contract_accepted
+            ? "/flux-intro"
+            : "/legal/contract"
         );
       }, 700);
     } catch (e) {

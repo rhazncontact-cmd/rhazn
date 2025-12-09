@@ -19,6 +19,9 @@ import * as LocalAuthentication from "expo-local-authentication";
 import { supabase } from "../../lib/supabase";
 import LoaderRhazn from "../components/LoaderRhazn";
 
+// ✅ PUSH
+import { registerForPushTokens } from "../utils/registerForPush";
+
 // ===============================
 // 🎨 COULEURS RHAZN — APPLE TYPE
 // ===============================
@@ -64,7 +67,35 @@ export default function LoginScreen() {
   };
 
   // ============================================================================
-  // ✅ LOGIN FINAL — 100 % CONFORME À public.users + RLS + ROUTES
+  // ✅ SAUVEGARDE PUSH TOKEN
+  // ============================================================================
+  const savePushTokenToSupabase = async (
+    userId: string,
+    role: "user" | "agent"
+  ) => {
+    try {
+      const token = await registerForPushTokens();
+      if (!token) return;
+
+      const { error } = await supabase.from("push_subscriptions").upsert({
+        user_id: userId,
+        role,
+        expo_token: token,
+        updated_at: new Date().toISOString(),
+      });
+
+      if (error) {
+        console.log("❌ PUSH TOKEN SAVE ERROR:", error);
+      } else {
+        console.log("✅ PUSH TOKEN SAUVEGARDÉ");
+      }
+    } catch (e) {
+      console.log("❌ PUSH TOKEN EXCEPTION:", e);
+    }
+  };
+
+  // ============================================================================
+  // ✅ LOGIN FINAL — 100 % CONFORME
   // ============================================================================
   const handleLogin = async () => {
     if (loading) return;
@@ -81,7 +112,6 @@ export default function LoginScreen() {
     }
 
     try {
-      // ✅ 1. AUTH SUPABASE
       const { data: authData, error: loginErr } =
         await supabase.auth.signInWithPassword({
           email: cleanEmail,
@@ -111,18 +141,15 @@ export default function LoginScreen() {
         return showAlert("Erreur critique", "Session invalide.");
       }
 
-      // ✅ 2. LECTURE PROFIL USER (RLS SAFE)
       const { data: userData, error: readErr } = await supabase
         .from("users")
         .select("uid, contract_accepted")
         .eq("uid", userId)
         .maybeSingle();
 
-      if (readErr) {
-        console.log("READ USER ERROR:", readErr);
-      }
+      if (readErr) console.log("READ USER ERROR:", readErr);
 
-      // ✅ 3. INSERT SI ABSENT (cas rare mais sécurisé)
+      // ✅ UTILISATEUR NOUVEAU
       if (!userData) {
         const { error: insertErr } = await supabase.from("users").insert({
           uid: userId,
@@ -141,6 +168,7 @@ export default function LoginScreen() {
         }
 
         showAlert("Connexion réussie", "Bienvenue dans RHAZN.", "success");
+        await savePushTokenToSupabase(userId, "user");
 
         setTimeout(() => {
           router.replace("/legal/contract");
@@ -149,14 +177,13 @@ export default function LoginScreen() {
         return;
       }
 
-      // ✅ 4. REDIRECTION DYNAMIQUE SELON LE CONTRAT
+      // ✅ UTILISATEUR EXISTANT
       showAlert("Connexion réussie", "Bienvenue dans RHAZN.", "success");
+      await savePushTokenToSupabase(userId, "user");
 
       setTimeout(() => {
         router.replace(
-          userData.contract_accepted
-            ? "/flux-intro"
-            : "/legal/contract"
+          userData.contract_accepted ? "/flux-intro" : "/legal/contract"
         );
       }, 700);
     } catch (e) {
@@ -200,7 +227,7 @@ export default function LoginScreen() {
   };
 
   // ============================================================================
-  // UI — APPLE TYPE
+  // UI
   // ============================================================================
   return (
     <KeyboardAvoidingView
@@ -316,7 +343,7 @@ export default function LoginScreen() {
 }
 
 // ============================================================================
-// STYLES — APPLE TYPE PREMIUM
+// STYLES
 // ============================================================================
 const styles = StyleSheet.create({
   container: {

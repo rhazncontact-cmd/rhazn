@@ -8,10 +8,12 @@ import {
     StyleSheet,
     Text,
     TouchableOpacity,
+    TouchableWithoutFeedback,
     View,
 } from "react-native";
 
 import * as Haptics from "expo-haptics";
+import * as NavigationBar from "expo-navigation-bar";
 import { supabase } from "../../lib/supabase";
 import LoaderRhazn from "../components/LoaderRhazn";
 
@@ -44,7 +46,7 @@ const generateContractText = () => {
 };
 
 // =========================
-// 📌 TEMPLATE ORIGINAL
+// 📌 TEMPLATE DU CONTRAT
 // =========================
 const CONTRACT_TEXT_TEMPLATE = `📜 CONDITIONS GÉNÉRALES D’UTILISATION & D’INTÉGRATION
 DE L’ÉCOSYSTÈME RHAZN®
@@ -238,32 +240,49 @@ RHAZN® — Écosystème Officiel de Monétisation et d’Exclusivité du Mérit
 © RHAZN — Tous droits réservés — {{ANNÉE_AUTOMATIQUE}}
 `;
 
-
 export default function ContractScreen() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
 
   // ====== PROGRESS STATES ======
-  const [progress, setProgress] = useState(0); // % de lecture
+  const [progress, setProgress] = useState(0);
   const [hasReachedEnd, setHasReachedEnd] = useState(false);
 
-  const scrollRef = useRef<any>(null);
+  const scrollRef = useRef(null);
   const lastScrollTs = useRef(Date.now());
 
-  // 🔐 Vérifier session
+  // ====== ANDROID NAVBAR CONTROL ======
+  const [tapCount, setTapCount] = useState(0);
+
+  useEffect(() => {
+    NavigationBar.setVisibilityAsync("hidden");
+    NavigationBar.setBehaviorAsync("overlay-swipe");
+  }, []);
+
+  const handleScreenTap = () => {
+    setTapCount((prev) => {
+      const newValue = prev + 1;
+      if (newValue >= 5) {
+        NavigationBar.setVisibilityAsync("visible");
+        return 0;
+      }
+      return newValue;
+    });
+  };
+
+  const hideNavOnScroll = () => {
+    NavigationBar.setVisibilityAsync("hidden");
+  };
+
+  // SESSION CHECK
   useEffect(() => {
     supabase.auth.getUser().then(({ data, error }) => {
-      if (error || !data.user) {
-        router.replace("/auth/login");
-      } else {
-        setChecking(false);
-      }
+      if (error || !data.user) router.replace("/auth/login");
+      else setChecking(false);
     });
   }, []);
 
-  // =============================
   // HANDLE ACCEPT
-  // =============================
   const handleAccept = async () => {
     const { data: session } = await supabase.auth.getUser();
     if (!session?.user) return;
@@ -281,28 +300,24 @@ export default function ContractScreen() {
     router.replace("/auth/login");
   };
 
-  // =============================
-  // CALCUL SCROLL PROGRESS
-  // =============================
-  const handleScroll = (e: any) => {
-    const now = Date.now();
+  // SCROLL PROGRESS
+  const handleScroll = (e) => {
+    hideNavOnScroll();
 
-    // ❌ Anti-scroll rapide (< 80ms)
+    const now = Date.now();
     if (now - lastScrollTs.current < 80) return;
     lastScrollTs.current = now;
 
-    const contentHeight = e.nativeEvent.contentSize.height;
-    const scrollHeight = e.nativeEvent.layoutMeasurement.height;
-    const scrollY = e.nativeEvent.contentOffset.y;
+    const { contentSize, layoutMeasurement, contentOffset } =
+      e.nativeEvent;
 
     const percent = Math.min(
       100,
-      Math.round((scrollY / (contentHeight - scrollHeight)) * 100)
+      Math.round((contentOffset.y / (contentSize.height - layoutMeasurement.height)) * 100)
     );
 
     setProgress(percent);
 
-    // 🎉 Haptique + message quand 100% atteint
     if (percent >= 100 && !hasReachedEnd) {
       setHasReachedEnd(true);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -318,80 +333,78 @@ export default function ContractScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      style={styles.full}
-    >
-      <View style={styles.logoWrapper}>
-        <Image
-          source={require("../../assets/images/rhazn-logo.png")}
-          style={styles.logo}
-        />
-      </View>
-
-      {/* ======== PROGRESS BAR ======== */}
-      <View style={[styles.progressBar, { height: `${progress}%` }]} />
-
-      <View style={styles.main}>
-        <Text style={styles.heading}>Conditions d’intégration</Text>
-        <Text style={styles.subheading}>
-          Faites défiler pour lire le contrat ({progress}%)
-        </Text>
-
-        <View style={styles.card}>
-          <ScrollView
-            ref={scrollRef}
-            style={styles.scroll}
-            contentContainerStyle={styles.scrollContent}
-            onScroll={handleScroll}
-            scrollEventThrottle={16}
-            showsVerticalScrollIndicator={false}
-          >
-            <Text style={styles.contractText}>{generateContractText()}</Text>
-
-            {/* ======== MESSAGE 100% LU ======== */}
-            {hasReachedEnd && (
-              <Text style={styles.endMessage}>
-                🎉 Vous avez lu tout le contrat. Merci de votre engagement envers RHAZN.
-              </Text>
-            )}
-
-            {/* ======== BOUTON ACCEPTER DANS LE SCROLL ======== */}
-            <TouchableOpacity
-              style={[
-                styles.acceptButton,
-                { marginTop: 22, opacity: hasReachedEnd ? 1 : 0.3 },
-              ]}
-              disabled={!hasReachedEnd}
-              onPress={handleAccept}
-              activeOpacity={0.9}
-            >
-              <Text style={styles.acceptText}>Accepter & continuer</Text>
-            </TouchableOpacity>
-
-            {/* ESPACE FINAL */}
-            <View style={{ height: 80 }} />
-          </ScrollView>
-
-          <View style={styles.gradientOverlay} pointerEvents="none" />
+    <TouchableWithoutFeedback onPress={handleScreenTap}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={styles.full}
+      >
+        <View style={styles.logoWrapper}>
+          <Image
+            source={require("../../assets/images/rhazn-logo.png")}
+            style={styles.logo}
+          />
         </View>
-      </View>
 
-      <View style={styles.actionsWrapper}>
-        <TouchableOpacity
-          style={styles.declineButton}
-          activeOpacity={0.85}
-          onPress={handleDecline}
-        >
-          <Text style={styles.declineText}>Refuser & quitter</Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+        <View style={[styles.progressBar, { height: `${progress}%` }]} />
+
+        <View style={styles.main}>
+          <Text style={styles.heading}>Conditions d’intégration</Text>
+          <Text style={styles.subheading}>
+            Faites défiler pour lire le contrat ({progress}%)
+          </Text>
+
+          <View style={styles.card}>
+            <ScrollView
+              ref={scrollRef}
+              style={styles.scroll}
+              contentContainerStyle={styles.scrollContent}
+              onScroll={handleScroll}
+              scrollEventThrottle={16}
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={styles.contractText}>{generateContractText()}</Text>
+
+              {hasReachedEnd && (
+                <Text style={styles.endMessage}>
+                  🎉 Vous avez lu tout le contrat. Merci de votre engagement envers RHAZN.
+                </Text>
+              )}
+
+              <TouchableOpacity
+                style={[
+                  styles.acceptButton,
+                  { opacity: hasReachedEnd ? 1 : 0.3 },
+                ]}
+                disabled={!hasReachedEnd}
+                onPress={handleAccept}
+                activeOpacity={0.9}
+              >
+                <Text style={styles.acceptText}>Accepter & continuer</Text>
+              </TouchableOpacity>
+
+              <View style={{ height: 100 }} />
+            </ScrollView>
+
+            <View style={styles.gradientOverlay} pointerEvents="none" />
+          </View>
+        </View>
+
+        <View style={styles.actionsWrapper}>
+          <TouchableOpacity
+            style={styles.declineButton}
+            activeOpacity={0.85}
+            onPress={handleDecline}
+          >
+            <Text style={styles.declineText}>Refuser & quitter</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 }
 
 // ============================================================================
-// STYLES — VERSION PREMIUM APPLE-LIKE — MODIFIÉS SELON TES DEMANDES
+// STYLES — VERSION PREMIUM RHAZN
 // ============================================================================
 const styles = StyleSheet.create({
   full: { flex: 1, backgroundColor: COLORS.black },
@@ -411,7 +424,6 @@ const styles = StyleSheet.create({
   },
   logo: { width: 46, height: 46, resizeMode: "contain", opacity: 0.95 },
 
-  // ===== PROGRESS BAR =====
   progressBar: {
     position: "absolute",
     top: 0,
@@ -423,7 +435,11 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 4,
   },
 
-  main: { flex: 1, paddingTop: 96, paddingHorizontal: 22 },
+  main: {
+    flex: 1,
+    paddingTop: 96,
+    paddingHorizontal: 22,
+  },
 
   heading: {
     color: COLORS.white,
@@ -436,14 +452,14 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
 
-  // ⭐ CARTE LÉGÈREMENT RÉDUITE ET ÉQUILIBRÉE
+  // ⭐ CARTE RÉDUITE POUR LIBÉRER LE BOUTON REFUSER
   card: {
-    flex: 1,
+    flex: 0.86, // ← Ajustement premium : la carte ne touche plus le bouton
     backgroundColor: COLORS.card,
     borderRadius: 24,
     borderWidth: 1,
     borderColor: COLORS.border,
-    padding: 14, // ↓ réduction élégante
+    padding: 14,
     overflow: "hidden",
   },
 
@@ -473,7 +489,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.55)",
   },
 
-  // ⭐ FOOTER APPLE-LIKE — PLUS AUCUNE BARRE GRISE
   actionsWrapper: {
     width: "100%",
     paddingHorizontal: 22,
@@ -482,19 +497,18 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
 
-  // ⭐ BOUTON REFUSER REPOSITIONNÉ EN FLOATING
   declineButton: {
     position: "absolute",
-    bottom: 22,          // ← remonte au-dessus de la barre Android
+    bottom: 32, // ← BOUTON REMONTÉ
     left: 22,
     right: 22,
     borderRadius: 999,
-    paddingVertical: 13,
+    paddingVertical: 14,
     borderWidth: 1,
     borderColor: COLORS.red,
     backgroundColor: "rgba(0,0,0,0.85)",
     alignItems: "center",
-    zIndex: 100,
+    zIndex: 200,
   },
 
   declineText: {
@@ -515,6 +529,7 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 6,
   },
+
   acceptText: {
     color: COLORS.black,
     fontWeight: "700",

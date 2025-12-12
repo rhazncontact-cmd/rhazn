@@ -138,12 +138,12 @@ export default function SignaturePremiumScreen() {
 
       try {
         const { error } = await supabase
-          .from("users")
+          .from("profiles")
           .update({
             contract_accepted: true,
             contract_accepted_at: new Date().toISOString(),
           })
-          .eq("uid", userId);
+          .eq("id", userId);
 
         if (error) {
           console.log("SIGNATURE_DB_ERROR:", error);
@@ -156,7 +156,7 @@ export default function SignaturePremiumScreen() {
 
         // Laisse respirer l’animation avant redirection
         setTimeout(() => {
-          router.replace("/flux-intro");
+          router.replace("/rz-roles");
         }, 1500);
       } catch (e) {
         console.log("SIGNATURE_FATAL:", e);

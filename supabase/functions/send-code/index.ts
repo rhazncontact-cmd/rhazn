@@ -46,7 +46,7 @@ serve(async (req) => {
     ).toISOString();
 
     // ✅ Enregistrement OTP
-    await supabase.from("email_otps").insert({
+    await supabase.from("email_verification_codes").insert({
       email,
       code,
       expires_at: expiresAt,

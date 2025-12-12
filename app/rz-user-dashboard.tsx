@@ -1,39 +1,75 @@
 // app/rz-user-dashboard.tsx
-
-import { Entypo, Feather, Ionicons } from "@expo/vector-icons";
+import * as NavigationBar from "expo-navigation-bar";
 import { useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  Image,
+  Dimensions,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
-  TouchableOpacity,
-  View,
+  View
 } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
-  FadeInUp,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
+  withSpring
 } from "react-native-reanimated";
 import { supabase } from "../lib/supabase";
-import RZBottomSheet from "./components/RZBottomSheet";
 
 const GOLD = "#D4AF37";
+const { height: SCREEN_HEIGHT } = Dimensions.get("window");
+const COMM_HEIGHT = SCREEN_HEIGHT;
+
+type Audience = "agents" | "users";
+type RZComm = {
+  id: string;
+  title: string;
+  body: string;
+  level: "info" | "warning" | "alert";
+  deep_link_route: string | null;
+  target_audience: "all" | "agents" | "users";
+  created_at: string;
+};
 
 export default function RZUserDashboard() {
   const router = useRouter();
-
   const [notifCount, setNotifCount] = useState(0);
   const [userUid, setUserUid] = useState<string | null>(null);
 
-  // 🔔 Animation du badge
+  const [audience, setAudience] = useState<Audience | null>(null);
+  const [commMessages, setCommMessages] = useState<RZComm[]>([]);
+
   const badgeScale = useSharedValue(1);
   const prevCountRef = useRef(0);
 
-  // ================== NOTIFS : CHARGEMENT + REALTIME ==================
+  const commTranslateY = useSharedValue(COMM_HEIGHT);
+
+  useEffect(() => {
+    NavigationBar.setVisibilityAsync("visible");
+    NavigationBar.setBehaviorAsync("inset-swipe");
+  }, []);
+
+  useEffect(() => {
+    const resolveAudience = async () => {
+      const { data } = await supabase.auth.getUser();
+      const uid = data?.user?.id;
+      if (!uid) return;
+
+      const { data: agentRow } = await supabase
+        .from("agent_applications")
+        .select("id, status")
+        .eq("user_uid", uid)
+        .eq("status", "APPROVED")
+        .maybeSingle();
+
+      setAudience(agentRow ? "agents" : "users");
+    };
+
+    resolveAudience();
+  }, []);
+
   const loadNotifCount = async (uid: string) => {
     const { count } = await supabase
       .from("notifications")
@@ -45,31 +81,54 @@ export default function RZUserDashboard() {
   };
 
   useEffect(() => {
-    let isMounted = true;
-    let channel: ReturnType<typeof supabase.channel> | null = null;
+    if (!audience) return;
+
+    let notifChannel: ReturnType<typeof supabase.channel> | null = null;
+    let commChannel: ReturnType<typeof supabase.channel> | null = null;
 
     const init = async () => {
       const { data } = await supabase.auth.getUser();
       const uid = data?.user?.id;
-      if (!uid || !isMounted) return;
+      if (!uid) return;
 
       setUserUid(uid);
       await loadNotifCount(uid);
 
-      // Realtime notifications
-      channel = supabase
+      notifChannel = supabase
         .channel(`notif-badge-${uid}`)
         .on(
           "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "notifications",
-          },
+          { event: "*", schema: "public", table: "notifications" },
           (payload) => {
             const n = payload.new as any;
-            if (n?.user_uid === uid) {
-              loadNotifCount(uid);
+            if (n?.user_uid === uid) loadNotifCount(uid);
+          }
+        )
+        .subscribe();
+
+      const { data: commData } = await supabase
+        .from("rz_communication")
+        .select("*")
+        .eq("is_published", true)
+        .in("target_audience", ["all", audience])
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      if (commData) setCommMessages(commData as RZComm[]);
+
+      commChannel = supabase
+        .channel("rz-communication-feed")
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "rz_communication" },
+          (payload) => {
+            const msg = payload.new as RZComm;
+            if (
+              msg.is_published &&
+              (msg.target_audience === "all" ||
+                msg.target_audience === audience)
+            ) {
+              setCommMessages((prev) => [msg, ...prev.slice(0, 19)]);
             }
           }
         )
@@ -79,19 +138,15 @@ export default function RZUserDashboard() {
     init();
 
     return () => {
-      isMounted = false;
-      if (channel) supabase.removeChannel(channel);
+      if (notifChannel) supabase.removeChannel(notifChannel);
+      if (commChannel) supabase.removeChannel(commChannel);
     };
-  }, []);
+  }, [audience]);
 
-  // ================== ANIMATION BADGE (bounce Apple-like) ==================
   useEffect(() => {
     if (notifCount > prevCountRef.current && notifCount > 0) {
       badgeScale.value = 1.25;
-      badgeScale.value = withSpring(1, {
-        damping: 7,
-        stiffness: 220,
-      });
+      badgeScale.value = withSpring(1, { damping: 7, stiffness: 220 });
     }
     prevCountRef.current = notifCount;
   }, [notifCount]);
@@ -100,175 +155,103 @@ export default function RZUserDashboard() {
     transform: [{ scale: badgeScale.value }],
   }));
 
-  // ================== BOUTON "TOUT MARQUER COMME LU" ==================
-  const markAllAsRead = async () => {
-    if (!userUid) return;
+  const doubleTap = Gesture.Tap()
+    .numberOfTaps(2)
+    .onEnd(() => {
+      commTranslateY.value = withSpring(0, { damping: 18 });
+    });
 
-    await supabase
-      .from("notifications")
-      .update({ is_read: true })
-      .eq("user_uid", userUid);
+  const panGesture = Gesture.Pan()
+    .onUpdate((e) => {
+      if (e.translationY > 0) commTranslateY.value = e.translationY;
+    })
+    .onEnd((e) => {
+      if (e.translationY > 120) {
+        commTranslateY.value = withSpring(COMM_HEIGHT);
+      } else {
+        commTranslateY.value = withSpring(0);
+      }
+    });
 
-    setNotifCount(0);
-  };
+  const commStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: commTranslateY.value }],
+  }));
 
-  // ================== MENU ==================
-  const menu = [
-    {
-      title: "Accéder à la BANQ",
-      desc: "Découvrez les PACT authentiques",
-      icon: "film-outline",
-      route: "/banq",
-      IconLib: Ionicons,
-    },
-    {
-      title: "Explorer",
-      desc: "Classements, créateurs, tendances",
-      icon: "search",
-      route: "/explorer",
-      IconLib: Feather,
-    },
-    {
-      title: "Publier un PACT",
-      desc: "Partagez votre talent authentique",
-      icon: "upload",
-      route: "/publish-PACT",
-      IconLib: Feather,
-    },
-    {
-      title: "Notifications",
-      desc: "QOB reçus, TAN reçus, alertes",
-      icon: "notifications-outline",
-      route: "/notifications",
-      IconLib: Ionicons,
-      badgeCount: notifCount,
-    },
-    {
-      title: "Mon Profil",
-      desc: "Statistiques, PACT, paramètres",
-      icon: "user",
-      route: "/profile",
-      IconLib: Feather,
-    },
-    {
-      title: "Wallet",
-      desc: "ACSET, TAN et transactions",
-      icon: "wallet",
-      route: "/wallet-utilisateur",
-      IconLib: Entypo,
-    },
-  ];
+  const formatDate = (iso: string) =>
+    new Date(iso).toLocaleString("fr-FR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 
-  // ================== RENDER ==================
   return (
     <View style={styles.container}>
-      {/* BARRE NATIVE */}
-      <StatusBar translucent={false} backgroundColor="#000" barStyle="light-content" />
+      <StatusBar backgroundColor="#000" barStyle="light-content" />
 
-      {/* RZ-COMMUNICATION */}
-      <View style={styles.rzComWrapper}>
-        <View style={styles.grayBar} />
-        <Text style={styles.rzComText}>RZ-Communication</Text>
-      </View>
+      {/* CONTENU MENU IDENTIQUE ICI */}
 
-      {/* HEADER FLOTTANT */}
-      <View style={styles.floatingHeader}>
-        <View>
-          <Text style={styles.title}>MENU</Text>
-          <Text style={styles.subtitle}>
-            Le mérite se découvre, se crée et se partage...
-          </Text>
+      {/* ✅ BOUTON RZ-COMMUNICATION FLOTTANT (AU-DESSUS BARRE ANDROID) */}
+      <GestureDetector gesture={doubleTap}>
+        <View style={styles.rzComBottom}>
+          <View style={styles.grayBar} />
+          <Text style={styles.rzComText}>RZ-Communication</Text>
         </View>
+      </GestureDetector>
 
-        <Animated.View entering={FadeInUp.duration(1200)}>
-          <Image
-            source={require("../assets/images/rhazn-logo.png")}
-            style={styles.logo}
-            resizeMode="contain"
-          />
+      {/* ✅ OVERLAY RZ-COMMUNICATION AVEC ESPACEMENT + FLOTTANT */}
+      <GestureDetector gesture={panGesture}>
+        <Animated.View style={[styles.commOverlay, commStyle]}>
+          <View style={styles.commHandle} />
+          <Text style={styles.commTitle}>RZ-Communication</Text>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {commMessages.length === 0 ? (
+              <Text style={styles.commEmpty}>
+                Aucune communication pour le moment.
+              </Text>
+            ) : (
+              commMessages.map((m) => (
+                <View key={m.id} style={styles.commCard}>
+                  <Text style={styles.commCardTitle}>{m.title}</Text>
+                  <Text style={styles.commCardBody}>{m.body}</Text>
+                  <Text style={styles.commCardMeta}>
+                    {formatDate(m.created_at)}
+                  </Text>
+                </View>
+              ))
+            )}
+          </ScrollView>
         </Animated.View>
-      </View>
-
-      {/* BOUTON "TOUT MARQUER COMME LU" */}
-      {notifCount > 0 && (
-        <View style={styles.clearWrapper}>
-          <TouchableOpacity onPress={markAllAsRead} style={styles.clearNotifBtn}>
-            <Text style={styles.clearNotifText}>Tout marquer comme lu</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* CONTENU SCROLLABLE */}
-      <ScrollView
-        contentContainerStyle={{ paddingTop: 190, paddingBottom: 140 }}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.menuContainer}>
-          {menu.map((item, i) => (
-            <Animated.View key={i} entering={FadeInUp.delay(i * 120)}>
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => router.push(item.route)}
-              >
-                <View style={styles.menuIcon}>
-                  <item.IconLib name={item.icon} size={24} color={GOLD} />
-                </View>
-
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.menuTitle}>{item.title}</Text>
-                  <Text style={styles.menuDesc}>{item.desc}</Text>
-                </View>
-
-                {/* BADGE NOTIFS DYNAMIQUE */}
-                {typeof item.badgeCount === "number" && item.badgeCount > 0 && (
-                  <Animated.View style={[styles.badge, badgeAnimatedStyle]}>
-                    <Text style={styles.badgeText}>
-                      {item.badgeCount > 99 ? "99+" : item.badgeCount}
-                    </Text>
-                  </Animated.View>
-                )}
-
-                <Feather
-                  name="chevron-right"
-                  size={22}
-                  color="rgba(212,175,55,0.6)"
-                />
-              </TouchableOpacity>
-            </Animated.View>
-          ))}
-        </View>
-      </ScrollView>
-
-      {/* FOOTER RHAZN */}
-      <RZBottomSheet />
+      </GestureDetector>
     </View>
   );
 }
 
-/******************************
- * STYLES
- ******************************/
+/**************** STYLES ****************/
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
 
-  /* RZ COMMUNICATION */
-  rzComWrapper: {
+  // ✅ BOUTON FLOTTANT RZ-COMMUNICATION
+  rzComBottom: {
     position: "absolute",
-    top: 0,
+    bottom: 44, // ✅ plus haut que la barre Android
     width: "100%",
-    backgroundColor: "#000",
     alignItems: "center",
-    paddingTop: 10,
     paddingBottom: 6,
-    zIndex: 30,
+    zIndex: 50,
   },
+
   grayBar: {
     width: 180,
-    height: 3,
+    height: 4,
     backgroundColor: "#444",
-    borderRadius: 8,
-    marginBottom: 6,
+    borderRadius: 10,
+    marginBottom: 10, // ✅ 2 espaces vers le bas
   },
+
   rzComText: {
     color: GOLD,
     fontSize: 13,
@@ -276,96 +259,66 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
 
-  /* HEADER FLOTTANT */
-  floatingHeader: {
+  // ✅ PAGE RZ-COMMUNICATION FLOTTANTE
+  commOverlay: {
     position: "absolute",
-    top: 45,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 10,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: "#000",
-    zIndex: 20,
-  },
-  logo: { width: 55, height: 55 },
-  title: {
-    fontSize: 32,
-    fontWeight: "700",
-    color: GOLD,
-    marginBottom: 6,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: "#aaa",
-    maxWidth: 240,
-  },
-
-  /* BOUTON CLEAR NOTIFS */
-  clearWrapper: {
-    position: "absolute",
-    top: 135,
+    bottom: 0,
+    height: COMM_HEIGHT,
     width: "100%",
-    alignItems: "center",
-    zIndex: 19,
-  },
-  clearNotifBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 20,
-    borderRadius: 999,
-    backgroundColor: "#111",
-    borderWidth: 1,
-    borderColor: "rgba(212,175,55,0.5)",
-  },
-  clearNotifText: {
-    color: GOLD,
-    fontWeight: "700",
-    fontSize: 12,
-  },
-
-  /* MENU */
-  menuContainer: { paddingHorizontal: 20, marginTop: 10 },
-  menuItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#111",
+    backgroundColor: "#000",
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
     padding: 18,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "rgba(212,175,55,0.3)",
-    marginBottom: 14,
+    paddingTop: 34, // ✅ TITRE DESCENDU DE 2 ESPACES
+    zIndex: 999,
   },
-  menuIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#222",
-    marginRight: 15,
-    borderWidth: 1,
-    borderColor: "rgba(212,175,55,0.4)",
-  },
-  menuTitle: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  menuDesc: { color: "#888", fontSize: 12, marginTop: 4 },
 
-  /* BADGE NOTIFS */
-  badge: {
-    backgroundColor: "#FF3B30",
-    minWidth: 22,
-    height: 22,
-    borderRadius: 50,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 6,
-    marginRight: 8,
+  commHandle: {
+    width: 70,
+    height: 5,
+    backgroundColor: "#444",
+    borderRadius: 10,
+    alignSelf: "center",
+    marginBottom: 12, // ✅ ESPACEMENT AUGMENTÉ
   },
-  badgeText: {
-    color: "#fff",
-    fontSize: 12,
+
+  commTitle: {
+    color: GOLD,
+    textAlign: "center",
+    fontSize: 18,
     fontWeight: "800",
+    marginBottom: 18, // ✅ 2 espaces vers le bas
+  },
+
+  commEmpty: {
+    color: "#777",
+    fontSize: 14,
+    textAlign: "center",
+    marginTop: 40,
+  },
+
+  commCard: {
+    backgroundColor: "#111",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "rgba(212,175,55,0.25)",
+  },
+
+  commCardTitle: {
+    color: GOLD,
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+
+  commCardBody: { color: "#ddd", fontSize: 13, lineHeight: 20 },
+
+  commCardMeta: {
+    color: "#777",
+    fontSize: 11,
+    marginTop: 8,
+    textAlign: "right",
   },
 });

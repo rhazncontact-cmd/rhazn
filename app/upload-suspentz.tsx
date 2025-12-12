@@ -4,7 +4,7 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -187,7 +187,7 @@ export default function UploadSuspentz() {
 
       refreshUser();
 
-      setTimeout(() => router.push("/dashboard"), 1200);
+      setTimeout(() => router.push("/rz-user-dashboard"), 1200);
 
     } catch (err: any) {
       console.log("UPLOAD ERROR:", err);
@@ -203,7 +203,7 @@ export default function UploadSuspentz() {
       <View style={styles.container}>
 
         {/* Logo */}
-        <TouchableOpacity style={styles.header} onPress={() => router.push("/dashboard")}>
+        <TouchableOpacity style={styles.header} onPress={() => router.push("/rz-user-dashboard")}>
           <Image source={require("../assets/images/rhazn-logo.png")} style={styles.logo} />
         </TouchableOpacity>
 

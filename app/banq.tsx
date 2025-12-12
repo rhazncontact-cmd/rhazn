@@ -2,7 +2,7 @@ import { Video } from "expo-av";
 import { LinearGradient } from "expo-linear-gradient";
 import * as NavigationBar from "expo-navigation-bar";
 import { useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Dimensions,
@@ -24,6 +24,7 @@ const { height, width } = Dimensions.get("window");
 
 const TAN_PER_SECOND = 1 / 50;
 const GOLD = "#D4AF37";
+const QOB_DELAY = 10; // 🔥 10 secondes réelles
 
 // ================= VIDEO URL =================
 function getVideoUrl(v: any): string {
@@ -54,6 +55,7 @@ export default function BanqDuMerite() {
   const videoRefs = useRef<{ [id: string]: any }>({});
 
   const [qob, setQob] = useState<{ [id: string]: number }>({});
+  const grantedRef = useRef<{ [id: string]: boolean }>({});
 
   // ================= PREMIUM LOW TAN OVERLAY =================
   const [lowTanVisible, setLowTanVisible] = useState(false);
@@ -137,7 +139,7 @@ export default function BanqDuMerite() {
     loadUser();
   }, []);
 
-  // ================= TIMER + BILLING (PREMIUM) =================
+  // ================= TIMER + TAN + QOB =================
   useEffect(() => {
     const timer = setInterval(() => {
       const id = videos[current]?.id;
@@ -146,29 +148,27 @@ export default function BanqDuMerite() {
       setPerVideoSeconds((s) => {
         const sec = (s[id] ?? 0) + 1;
         maybeBillFor(id, sec);
+        maybeGrantQOB(id, sec);
         return { ...s, [id]: sec };
       });
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [current, paused, videos]);
+  }, [current, paused, videos, currentUserId]);
 
+  // ================= TAN BILLING =================
   const maybeBillFor = async (videoId: string, sec: number) => {
-    if (!currentUserId || sec % 10 !== 0) return;
+    if (!currentUserId) return;
 
     const tanToBill = sec * TAN_PER_SECOND;
 
-    // ❌ PLUS ASSEZ DE TAN → OVERLAY PREMIUM + BLOCAGE
     if (userTanRef.current < tanToBill) {
-      const id = videos[current]?.id;
-      const r = videoRefs.current[id];
+      const r = videoRefs.current[videoId];
       r?.pauseAsync?.();
-
       showLowTanOverlay();
       return;
     }
 
-    // ✅ FACTURATION NORMALE
     const newTan = +(userTanRef.current - tanToBill).toFixed(4);
     userTanRef.current = newTan;
     setUserTan(newTan);
@@ -179,13 +179,23 @@ export default function BanqDuMerite() {
       .eq("uid", currentUserId);
   };
 
-  // ================= QOB =================
-  const likeQOB = (id: string) => {
-    setQob((m) => {
-      const next = (m[id] ?? 0) + 1;
-      supabase.from("suspentz").update({ qob: next }).eq("id", id);
-      return { ...m, [id]: next };
+  // ================= QOB + ABONNEMENT AUTO =================
+  const maybeGrantQOB = async (videoId: string, sec: number) => {
+    if (!currentUserId) return;
+    if (sec < QOB_DELAY) return;
+    if (grantedRef.current[videoId]) return;
+
+    grantedRef.current[videoId] = true;
+
+    // 🔥 RPC pour QOB + abonnement auto
+    const { error } = await supabase.rpc("grant_qob_and_auto_subscribe", {
+      p_user_uid: currentUserId,
+      p_suspentz_id: videoId,
     });
+
+    if (!error) {
+      setQob((m) => ({ ...m, [videoId]: (m[videoId] ?? 0) + 1 }));
+    }
   };
 
   // ================= PAUSE =================
@@ -222,7 +232,7 @@ export default function BanqDuMerite() {
         {/* BARRE DE PROGRESSION */}
         <View style={styles.progressBar}>
           <View
-            style={[styles.progressFill, { width: `${Math.min(sec, 100)}%` }]}
+            style={[styles.progressFill, { width: `${Math.min((sec / QOB_DELAY) * 100, 100)}%` }]}
           />
         </View>
 
@@ -237,9 +247,7 @@ export default function BanqDuMerite() {
             />
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => likeQOB(id)}>
-            <Text style={styles.qobTxt}>QOB {qob[id] ?? 0}</Text>
-          </TouchableOpacity>
+          <Text style={styles.qobTxt}>QOB {qob[id] ?? 0}</Text>
         </View>
       </Pressable>
     );
@@ -267,7 +275,7 @@ export default function BanqDuMerite() {
         }
       />
 
-      {/* ================= OVERLAY PREMIUM TAN INSUFFISANT ================= */}
+      {/* ================= OVERLAY PREMIUM TAN ================= */}
       {lowTanVisible && (
         <Animated.View
           style={[
@@ -372,7 +380,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
 
-  // ===== OVERLAY PREMIUM =====
   lowTanOverlay: {
     position: "absolute",
     top: 0,

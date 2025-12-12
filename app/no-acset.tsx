@@ -1,9 +1,12 @@
 import { useRouter } from "expo-router";
-import React from "react";
-import { Image, StyleSheet, Text, View } from "react-native";
+import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 export default function NoACSET() {
   const router = useRouter();
+
+  const goToContactED = () => {
+    router.push("/contact-ed");
+  };
 
   return (
     <View style={styles.container}>
@@ -14,17 +17,17 @@ export default function NoACSET() {
         resizeMode="contain"
       />
 
-      {/* ✅ CARTE OR — MESSAGE PRINCIPAL */}
-      <View style={styles.goldCard}>
+      {/* ✅ CARTE OR — MAINTENANT CLIQUABLE */}
+      <TouchableOpacity style={styles.goldCard} onPress={goToContactED}>
         <Text style={styles.restrictedText}>
-          Accès Réservé - Identité Agent non Trouvé
+          Localisez un Agent RHAZN certifié à proximité de votre position.
         </Text>
-      </View>
+      </TouchableOpacity>
 
       {/* ✅ INFO SECONDAIRE */}
       <Text style={styles.info}>
-        Veuillez contacter un agent RHAZN habilité pour l’activation de votre
-        compte.
+        L’accès sera disponible dès que votre solde atteindra le seuil requis
+        ou après activation du compte.
       </Text>
     </View>
   );
@@ -48,7 +51,7 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
 
-  // ✅ CARTE OR ÉPURÉE
+  // ✅ CARTE OR ÉPURÉE (CLIQUABLE)
   goldCard: {
     backgroundColor: GOLD_SOFT,
     paddingVertical: 18,
@@ -66,7 +69,7 @@ const styles = StyleSheet.create({
   // ✅ TEXTE NOIR DANS CARTE OR
   restrictedText: {
     fontSize: 18,
-    color: "#000", // ✅ NOIR comme demandé
+    color: "#000",
     fontWeight: "800",
     textAlign: "center",
     lineHeight: 24,

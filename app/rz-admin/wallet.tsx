@@ -1,22 +1,20 @@
-// app/rz-admin/wallet.tsx
-
 import { Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import * as NavigationBar from "expo-navigation-bar";
 import { useRouter } from "expo-router";
 import { useEffect, useRef } from "react";
 import {
-    Animated,
-    Easing,
-    Image,
-    PanResponder,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Animated,
+  Easing,
+  Image,
+  PanResponder,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
-import AdminGuard from "../components/AdminGuard"; // ✅ même logique que agents.tsx
+import AdminGuard from "../components/AdminGuard"; // ✅ Sécurité admin
 
 export default function RZAdminWallet() {
   const router = useRouter();
@@ -74,7 +72,11 @@ export default function RZAdminWallet() {
   return (
     <AdminGuard>
       <View style={styles.container} {...panResponder.panHandlers}>
-        <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+        <StatusBar
+          translucent
+          backgroundColor="transparent"
+          barStyle="light-content"
+        />
 
         {/* HEADER */}
         <View style={styles.header}>
@@ -93,7 +95,9 @@ export default function RZAdminWallet() {
 
         <Text style={styles.subtitle}>Autorité Sacrée du Mérite</Text>
 
-        <Animated.View style={[styles.divider, { backgroundColor: glowColor }]} />
+        <Animated.View
+          style={[styles.divider, { backgroundColor: glowColor }]}
+        />
 
         {/* ====================================================== */}
         {/* MAIN GRID */}
@@ -105,8 +109,17 @@ export default function RZAdminWallet() {
             onPress={() => router.push("/rz-admin/agents")}
           />
 
+          {/* ✅ RZ-COMMUNICATION — ACTIVÉ */}
           <AdminCard
-            icon={<MaterialIcons name="movie-filter" size={30} color="#4ade80" />}
+            icon={<Ionicons name="megaphone" size={28} color="#38bdf8" />}
+            title="RZ-Communication (Diffusion)"
+            onPress={() => router.push("/rz-admin-communication")}
+          />
+
+          <AdminCard
+            icon={
+              <MaterialIcons name="movie-filter" size={30} color="#4ade80" />
+            }
             title="Validations Flux-Vidéos"
             onPress={() => router.push("/rz-admin/videos")}
           />
@@ -157,7 +170,7 @@ function AdminCard({
 }
 
 /* =======================================================
-   STYLES
+   STYLES — VERSION FINALE
 ======================================================= */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },

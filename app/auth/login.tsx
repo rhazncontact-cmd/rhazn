@@ -15,16 +15,13 @@ import {
 
 import * as Device from "expo-device";
 import * as LocalAuthentication from "expo-local-authentication";
+import * as Network from "expo-network";
 
 import { supabase } from "../../lib/supabase";
 import LoaderRhazn from "../components/LoaderRhazn";
-
-// ✅ PUSH
 import { registerForPushTokens } from "../utils/registerForPush";
 
-// ===============================
-// 🎨 COULEURS RHAZN — APPLE TYPE
-// ===============================
+// 🎨 PALETTE RHAZN
 const COLORS = {
   black: "#000000",
   white: "#FFFFFF",
@@ -32,7 +29,7 @@ const COLORS = {
   darkGray: "#121212",
   green: "#00C853",
   crimson: "#D32F2F",
-  gold: "#D4AF37",
+  gold: "#FFD700",
 };
 
 type AlertState =
@@ -48,7 +45,6 @@ export default function LoginScreen() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [deviceId, setDeviceId] = useState("");
 
   const [alert, setAlert] = useState<AlertState>(null);
   const [loading, setLoading] = useState(false);
@@ -56,6 +52,8 @@ export default function LoginScreen() {
   useEffect(() => {
     setDeviceId(`${Device.osName}-${Device.osVersion}-${Device.modelId}`);
   }, []);
+
+  const [deviceId, setDeviceId] = useState("");
 
   const showAlert = (
     title: string,
@@ -67,143 +65,149 @@ export default function LoginScreen() {
   };
 
   // ============================================================================
-  // ✅ SAUVEGARDE PUSH TOKEN
+  // 🔔 Enregistrement du push token
   // ============================================================================
-  const savePushTokenToSupabase = async (
-    userId: string,
-    role: "user" | "agent"
-  ) => {
+  const savePushTokenToSupabase = async (userId: string) => {
     try {
       const token = await registerForPushTokens();
       if (!token) return;
 
-      const { error } = await supabase.from("push_subscriptions").upsert({
+      await supabase.from("push_subscriptions").upsert({
         user_id: userId,
-        role,
+        role: "user",
         expo_token: token,
         updated_at: new Date().toISOString(),
       });
-
-      if (error) {
-        console.log("❌ PUSH TOKEN SAVE ERROR:", error);
-      } else {
-        console.log("✅ PUSH TOKEN SAUVEGARDÉ");
-      }
     } catch (e) {
-      console.log("❌ PUSH TOKEN EXCEPTION:", e);
+      console.log("❌ PUSH TOKEN ERROR:", e);
     }
   };
 
   // ============================================================================
-  // ✅ LOGIN FINAL — 100 % CONFORME
+  // 🔐 LOGIN SUPABASE — VERSION FINALE
   // ============================================================================
   const handleLogin = async () => {
     if (loading) return;
     setLoading(true);
     setAlert(null);
 
-    const cleanEmail = email.trim().toLowerCase();
-
-    if (!cleanEmail || !password) {
+    // ❌ Vérification Internet
+    const net = await Network.getNetworkStateAsync();
+    if (!net.isConnected) {
       return showAlert(
-        "Champs manquants",
-        "Veuillez entrer votre adresse e-mail et votre mot de passe."
+        "Connexion Internet absente",
+        "Veuillez activer vos données mobiles ou votre Wi-Fi."
       );
     }
 
+    const mail = email.trim().toLowerCase();
+
+    // ❌ Vérification syntaxe mail
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(mail)) {
+      return showAlert(
+        "Adresse e-mail invalide",
+        "Vérifiez l’orthographe de votre adresse e-mail."
+      );
+    }
+
+    if (!password) {
+      return showAlert("Mot de passe manquant", "Veuillez entrer votre mot de passe.");
+    }
+
     try {
-      const { data: authData, error: loginErr } =
+      // ======================================================
+      // 1️⃣ SIGN IN AUTH.OFFICIEL
+      // ======================================================
+      const { data: authData, error: loginError } =
         await supabase.auth.signInWithPassword({
-          email: cleanEmail,
+          email: mail,
           password,
         });
 
-      if (loginErr) {
-        if (loginErr.message.toLowerCase().includes("invalid")) {
-          return showAlert(
-            "Identifiants incorrects",
-            "Adresse e-mail ou mot de passe incorrect."
-          );
-        }
-
-        if (loginErr.message.toLowerCase().includes("confirm")) {
-          return showAlert(
-            "Compte non activé",
-            "Veuillez confirmer votre e-mail."
-          );
-        }
-
-        return showAlert("Connexion impossible", "Erreur serveur.");
+      // Mot de passe incorrect
+      if (loginError?.message.toLowerCase().includes("invalid")) {
+        return showAlert(
+          "Mot de passe incorrect",
+          "Vérifiez votre mot de passe."
+        );
       }
 
-      const userId = authData.user?.id;
-      if (!userId) {
-        return showAlert("Erreur critique", "Session invalide.");
+      // Email non confirmé
+      if (loginError?.message.toLowerCase().includes("confirm")) {
+        return showAlert(
+          "Compte non activé",
+          "Veuillez vérifier votre e-mail et confirmer votre compte."
+        );
       }
 
-      const { data: userData, error: readErr } = await supabase
-        .from("users")
-        .select("uid, contract_accepted")
-        .eq("uid", userId)
+      if (loginError) {
+        return showAlert(
+          "Erreur serveur",
+          "Veuillez réessayer dans un instant."
+        );
+      }
+
+      const user = authData.user;
+      if (!user) {
+        return showAlert("Session invalide", "Veuillez vous reconnecter.");
+      }
+
+      const userId = user.id;
+
+      // ======================================================
+      // 2️⃣ RÉCUPÉRER LE PROFIL (public.profiles)
+      // ======================================================
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("contract_accepted")
+        .eq("id", userId)
         .maybeSingle();
 
-      if (readErr) console.log("READ USER ERROR:", readErr);
-
-      // ✅ UTILISATEUR NOUVEAU
-      if (!userData) {
-        const { error: insertErr } = await supabase.from("users").insert({
-          uid: userId,
-          email: cleanEmail,
-          tan: 0,
-          role: "user",
-          contract_accepted: false,
-        });
-
-        if (insertErr) {
-          console.log("INSERT USER ERROR:", insertErr);
-          return showAlert(
-            "Erreur création compte",
-            "Impossible d'initialiser votre compte."
-          );
-        }
-
-        showAlert("Connexion réussie", "Bienvenue dans RHAZN.", "success");
-        await savePushTokenToSupabase(userId, "user");
-
-        setTimeout(() => {
-          router.replace("/legal/contract");
-        }, 700);
-
-        return;
+      if (profileError) {
+        console.log("PROFILE ERROR:", profileError);
       }
 
-      // ✅ UTILISATEUR EXISTANT
-      showAlert("Connexion réussie", "Bienvenue dans RHAZN.", "success");
-      await savePushTokenToSupabase(userId, "user");
+      // ======================================================
+      // 3️⃣ ENREGISTRER LE PUSH TOKEN
+      // ======================================================
+      await savePushTokenToSupabase(userId);
+
+      // ======================================================
+      // 4️⃣ SUCCESS
+      // ======================================================
+      showAlert(
+        "Connexion réussie",
+        "Bienvenue dans l’univers RHAZN.",
+        "success"
+      );
 
       setTimeout(() => {
         router.replace(
-          userData.contract_accepted ? "/flux-intro" : "/legal/contract"
+          profile?.contract_accepted ? "/rz-roles" : "/legal/contract"
         );
       }, 700);
     } catch (e) {
-      console.log("LOGIN ERROR:", e);
-      showAlert("Erreur critique", "Une erreur inattendue s'est produite.");
+      console.log(e);
+      showAlert(
+        "Erreur critique",
+        "Impossible de finaliser la connexion."
+      );
     } finally {
       setLoading(false);
     }
   };
 
   // ============================================================================
-  // 🔒 BIOMÉTRIE — SESSION UNIQUEMENT
+  // 🔒 BIOMÉTRIE
   // ============================================================================
   const handleBiometricsLogin = async () => {
     try {
       const supported = await LocalAuthentication.hasHardwareAsync();
       if (!supported)
         return showAlert(
-          "Indisponible",
-          "Votre appareil ne supporte pas la biométrie."
+          "Biométrie indisponible",
+          "Votre appareil ne supporte pas cette fonctionnalité."
         );
 
       const result = await LocalAuthentication.authenticateAsync({
@@ -211,23 +215,23 @@ export default function LoginScreen() {
       });
 
       if (!result.success)
-        return showAlert("Échec", "Authentification annulée.");
+        return showAlert("Authentification annulée", "Veuillez réessayer.");
 
       const { data } = await supabase.auth.getSession();
       if (!data.session)
         return showAlert(
-          "Première connexion requise",
-          "Veuillez vous connecter une première fois."
+          "Connexion requise",
+          "Veuillez d’abord vous connecter normalement."
         );
 
-      router.replace("/flux-intro");
-    } catch {
-      showAlert("Erreur", "Impossible d’utiliser la biométrie.");
+      router.replace("/rz-roles");
+    } catch (e) {
+      showAlert("Erreur biométrique", "Impossible d’accéder à la reconnaissance.");
     }
   };
 
   // ============================================================================
-  // UI
+  // 🖥️ UI PREMIUM
   // ============================================================================
   return (
     <KeyboardAvoidingView
@@ -247,17 +251,15 @@ export default function LoginScreen() {
           <Lock color={COLORS.white} size={34} style={{ marginBottom: 18 }} />
 
           <Text style={styles.title}>Connexion</Text>
-          <Text style={styles.subtitle}>
-            Accédez à l’univers sécurisé RHAZN
-          </Text>
+          <Text style={styles.subtitle}>Accédez à l’univers sécurisé RHAZN</Text>
 
           <TextInput
             placeholder="Adresse e-mail"
             placeholderTextColor={COLORS.gray}
             value={email}
             onChangeText={setEmail}
-            style={styles.input}
             autoCapitalize="none"
+            style={styles.input}
           />
 
           <TextInput
@@ -270,7 +272,7 @@ export default function LoginScreen() {
           />
 
           {loading ? (
-            <LoaderRhazn />
+            <LoaderRhazn color={COLORS.gold} />
           ) : (
             <TouchableOpacity
               style={styles.loginButton}
@@ -301,7 +303,7 @@ export default function LoginScreen() {
             styles.alertContainer,
             {
               borderColor:
-                alert.type === "error" ? COLORS.crimson : COLORS.green,
+                alert.type === "error" ? COLORS.crimson : COLORS.gold,
             },
           ]}
         >
@@ -310,12 +312,11 @@ export default function LoginScreen() {
               styles.alertBar,
               {
                 backgroundColor:
-                  alert.type === "error"
-                    ? COLORS.crimson
-                    : COLORS.green,
+                  alert.type === "error" ? COLORS.crimson : COLORS.gold,
               },
             ]}
           />
+
           <View style={{ flex: 1 }}>
             <Text style={styles.alertTitle}>{alert.title}</Text>
             <Text style={styles.alertMessage}>{alert.message}</Text>
@@ -329,7 +330,7 @@ export default function LoginScreen() {
                   color:
                     alert.type === "error"
                       ? COLORS.crimson
-                      : COLORS.green,
+                      : COLORS.gold,
                 },
               ]}
             >
@@ -343,7 +344,7 @@ export default function LoginScreen() {
 }
 
 // ============================================================================
-// STYLES
+// 💎 STYLES PREMIUM
 // ============================================================================
 const styles = StyleSheet.create({
   container: {
@@ -394,9 +395,6 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingVertical: 16,
     marginTop: 6,
-    shadowColor: "#000",
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
     elevation: 8,
   },
   loginText: {

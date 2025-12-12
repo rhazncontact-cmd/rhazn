@@ -1,6 +1,6 @@
 import { Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Modal,
   Pressable,
@@ -27,11 +27,11 @@ export default function RZAgentDashboard() {
   const [loading, setLoading] = useState(true);
 
   // -----------------------------------------------------------------------
-  // 🔐 CONTRÔLE AGENT + WALLET + REALTIME
+  // 🔐 INIT AGENT — WALLET — REALTIME (SANS AUCUNE REDIRECTION)
   // -----------------------------------------------------------------------
   useEffect(() => {
     let mounted = true;
-    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let channel: any = null;
 
     const initAgent = async () => {
       try {
@@ -39,12 +39,13 @@ export default function RZAgentDashboard() {
         const uid = session?.session?.user?.id;
 
         if (!uid) {
-          router.replace("/auth");
+          // ❌ Aucune redirection — AgentGuard gère
+          setLoading(false);
           return;
         }
 
-        /* 1️⃣ Vérification du statut Agent */
-        const { data: agent, error: agentError } = await supabase
+        /* 1️⃣ Vérification du DERNIER statut Agent (SANS REDIRIGER) */
+        const { data: agent } = await supabase
           .from("agent_applications")
           .select("status")
           .eq("user_uid", uid)
@@ -52,18 +53,10 @@ export default function RZAgentDashboard() {
           .limit(1)
           .single();
 
-        if (agentError || !agent) {
-          router.replace("/apply-agent");
-          return;
-        }
-
-        if (agent.status === "PENDING") {
-          router.replace("/agent-pending");
-          return;
-        }
-
-        if (agent.status === "REJECTED") {
-          router.replace("/agent-rejected");
+        if (!agent || agent.status !== "ACCEPTED") {
+          // ❌ Zéro redirection
+          // ✅ AgentGuard bloquera automatiquement
+          setLoading(false);
           return;
         }
 
@@ -82,7 +75,7 @@ export default function RZAgentDashboard() {
           });
         }
 
-        /* 3️⃣ Chargement wallet */
+        /* 3️⃣ Chargement Wallet */
         const loadWallet = async () => {
           const { data } = await supabase
             .from("agents_wallet")
@@ -128,7 +121,7 @@ export default function RZAgentDashboard() {
         setLoading(false);
       } catch (e) {
         console.log("AGENT_DASHBOARD_INIT_ERROR:", e);
-        router.replace("/dashboard");
+        setLoading(false);
       }
     };
 
@@ -141,7 +134,7 @@ export default function RZAgentDashboard() {
   }, []);
 
   // -----------------------------------------------------------------------
-  // UI DASHBOARD AGENT
+  // 🧱 UI DASHBOARD AGENT
   // -----------------------------------------------------------------------
   return (
     <AgentGuard>
@@ -191,7 +184,7 @@ export default function RZAgentDashboard() {
           </Text>
         </View>
 
-        {/* CONTENU */}
+        {/* OPÉRATIONS */}
         <ScrollView contentContainerStyle={{ paddingBottom: 40, paddingTop: 20 }}>
           <Text style={styles.sectionTitle}>Opérations</Text>
 
@@ -214,7 +207,6 @@ export default function RZAgentDashboard() {
               onPress={() => router.push("/agent-buy-acset")}
             />
 
-            {/* ✅ NOUVELLE VENTE PRÉSENTIELLE DIRECTE */}
             <Tile
               title="Vente Présentielle ACSET"
               icon={<MaterialIcons name="sell" size={28} color="#38bdf8" />}
@@ -253,7 +245,7 @@ export default function RZAgentDashboard() {
 /* --------------------------------------------------------- */
 /* 🧩 COMPOSANT TILE                                         */
 /* --------------------------------------------------------- */
-function Tile({ title, icon, onPress }) {
+function Tile({ title, icon, onPress }: any) {
   return (
     <TouchableOpacity onPress={onPress} style={styles.tile}>
       <View style={styles.iconWrap}>{icon}</View>
@@ -263,7 +255,7 @@ function Tile({ title, icon, onPress }) {
 }
 
 /* --------------------------------------------------------- */
-/* 🎨 STYLES                                                */
+/* 🎨 STYLES                                                 */
 /* --------------------------------------------------------- */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000", paddingHorizontal: 20 },
@@ -288,20 +280,25 @@ const styles = StyleSheet.create({
     padding: 20,
     marginTop: 10,
   },
+
   balanceTitle: {
     color: GOLD,
     fontSize: 16,
     fontWeight: "700",
     marginBottom: 10,
   },
+
   balanceRow: { flexDirection: "row", alignItems: "baseline", marginBottom: 6 },
+
   balanceValue: {
     color: "#fff",
     fontSize: 32,
     fontWeight: "900",
     marginRight: 8,
   },
+
   balanceUnit: { color: GOLD, fontSize: 18 },
+
   balanceNote: { color: "#aaa", marginTop: 10, fontSize: 12 },
 
   sectionTitle: {

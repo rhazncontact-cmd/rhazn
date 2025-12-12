@@ -17,7 +17,7 @@ import { supabase } from "../../lib/supabase";
 import LoaderRhazn from "../components/LoaderRhazn";
 import { isHumanTime } from "../utils/antibot";
 
-// 🎨 PALETTE RHAZN — APPLE TYPE
+// 🎨 PALETTE RHAZN
 const COLORS = {
   black: "#000000",
   white: "#FFFFFF",
@@ -39,12 +39,12 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [alert, setAlert] = useState<AlertState>(null);
   const [deviceId, setDeviceId] = useState("");
   const [startTime, setStartTime] = useState(Date.now());
 
-  // ✅ Honeypot anti-bot
   const [honeypot, setHoneypot] = useState("");
 
   useEffect(() => {
@@ -56,12 +56,8 @@ export default function RegisterScreen() {
     setLoading(false);
   };
 
-  const showNetError = () => {
-    showAlert("Vérifiez votre connexion internet pour continuer.", true);
-  };
-
   // ============================================================================
-  // ✅ REGISTER FINAL — 100 % CONFORME `public.users`
+  // 🚀 INSCRIPTION SUPABASE + OTP EMAIL RHAZN CUSTOM
   // ============================================================================
   const handleRegister = async () => {
     if (loading) return;
@@ -70,7 +66,7 @@ export default function RegisterScreen() {
 
     const mail = email.trim().toLowerCase();
 
-    // ✅ Anti-bot
+    // 🔒 Anti-bot
     if (honeypot !== "") {
       return showAlert("Requête bloquée pour raison de sécurité.");
     }
@@ -88,7 +84,7 @@ export default function RegisterScreen() {
     }
 
     if (password.length < 8) {
-      return showAlert("Le mot de passe doit contenir au moins 8 caractères.");
+      return showAlert("Votre mot de passe doit contenir au moins 8 caractères.");
     }
 
     if (password !== confirm) {
@@ -96,7 +92,9 @@ export default function RegisterScreen() {
     }
 
     try {
-      // ✅ 1. CRÉATION AUTH (unicité gérée par Supabase)
+      // ============================================================
+      // 1️⃣ CRÉATION UTILISATEUR DANS AUTH
+      // ============================================================
       const { data: signUpData, error: signUpError } =
         await supabase.auth.signUp({
           email: mail,
@@ -110,35 +108,35 @@ export default function RegisterScreen() {
         return showAlert("Impossible de créer votre compte.");
       }
 
-      const uid = signUpData.user.id;
+      // ============================================================
+      // 2️⃣ ENVOI OTP VIA TA FUNCTION RHAZN
+      // ============================================================
+      const { error: fnError } = await supabase.functions.invoke("send-code", {
+        body: { email: mail, device_id: deviceId },
+      });
 
-      // ✅ 2. CRÉATION `public.users` — EXACT MATCH DB
-      const { error: insertProfileError } = await supabase
-        .from("users")
-        .insert({
-          uid,
-          email: mail,
-          tan: 0,
-          role: "user",
-          contract_accepted: false,
-        });
-
-      if (insertProfileError) {
-        return showAlert("Erreur d'initialisation du compte.");
+      if (fnError) {
+        console.log("SEND CODE ERROR:", fnError);
+        return showAlert("Impossible d’envoyer le code de vérification.", true);
       }
 
-      // ✅ 3. CONFIRMATION E-MAIL SUPABASE AUTO
-      showAlert("Compte créé. Vérifiez votre e-mail.", false);
+      // ============================================================
+      // 3️⃣ REDIRECTION VERS VERIFY-CODE
+      // ============================================================
+      showAlert("Code envoyé. Vérifiez vos emails.", false);
 
       setTimeout(() => {
-        setAlert(null);
-        router.replace("/auth/login");
+        router.replace({
+          pathname: "/auth/verify-code",
+          params: { email: mail },
+        });
       }, 1200);
-    } catch (e: any) {
-      if (String(e?.message || "").includes("Network")) {
-        showNetError();
+
+    } catch (err: any) {
+      if (String(err?.message || "").includes("Network")) {
+        showAlert("Vérifiez votre connexion internet.", true);
       } else {
-        showAlert("Erreur lors de l’inscription.");
+        showAlert("Erreur lors de l’inscription.", true);
       }
     } finally {
       setLoading(false);
@@ -146,7 +144,7 @@ export default function RegisterScreen() {
   };
 
   // ============================================================================
-  // ✅ UI APPLE TYPE PREMIUM
+  // 🖥️ UI RHAZN PREMIUM
   // ============================================================================
   return (
     <KeyboardAvoidingView
@@ -175,8 +173,8 @@ export default function RegisterScreen() {
           placeholder="Adresse e-mail"
           placeholderTextColor={COLORS.gray}
           style={styles.input}
-          value={email}
           autoCapitalize="none"
+          value={email}
           onChangeText={(text) => {
             setStartTime(Date.now());
             setEmail(text);
@@ -201,6 +199,7 @@ export default function RegisterScreen() {
           onChangeText={setConfirm}
         />
 
+        {/* Bouton */}
         <TouchableOpacity
           style={styles.createButton}
           onPress={handleRegister}
@@ -211,7 +210,7 @@ export default function RegisterScreen() {
         </TouchableOpacity>
 
         {loading && (
-          <View style={styles.loaderWrapper}>
+          <View style={{ marginTop: 20 }}>
             <LoaderRhazn color={COLORS.green} />
           </View>
         )}
@@ -221,7 +220,7 @@ export default function RegisterScreen() {
         </TouchableOpacity>
       </ScrollView>
 
-      {/* ✅ Notification premium */}
+      {/* Notification */}
       {alert && (
         <View
           style={[
@@ -237,9 +236,7 @@ export default function RegisterScreen() {
             <Text
               style={[
                 styles.alertClose,
-                {
-                  color: alert.isError ? COLORS.crimson : COLORS.green,
-                },
+                { color: alert.isError ? COLORS.crimson : COLORS.green },
               ]}
             >
               ✕
@@ -251,48 +248,35 @@ export default function RegisterScreen() {
   );
 }
 
-// ============================================================================
-// ✅ STYLES — APPLE TYPE PREMIUM
-// ============================================================================
 const styles = StyleSheet.create({
-  full: {
-    flex: 1,
-    backgroundColor: COLORS.black,
-  },
-
+  full: { flex: 1, backgroundColor: COLORS.black },
   logoContainer: {
     position: "absolute",
     top: 40,
     right: 24,
     zIndex: 20,
   },
-
   logo: {
     width: 52,
     height: 52,
     resizeMode: "contain",
-    opacity: 0.95,
   },
-
   container: {
     paddingTop: 140,
     paddingHorizontal: 26,
     alignItems: "center",
   },
-
   title: {
     color: COLORS.white,
     fontSize: 30,
     fontWeight: "800",
     marginBottom: 6,
   },
-
   subtitle: {
     color: COLORS.gray,
     fontSize: 14,
     marginBottom: 30,
   },
-
   input: {
     width: "100%",
     backgroundColor: COLORS.darkGray,
@@ -304,7 +288,6 @@ const styles = StyleSheet.create({
     borderColor: "#1f1f1f",
     borderWidth: 1,
   },
-
   createButton: {
     width: "100%",
     paddingVertical: 16,
@@ -313,25 +296,17 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.gold,
     elevation: 8,
   },
-
   createText: {
     textAlign: "center",
     fontWeight: "700",
     fontSize: 16,
     color: COLORS.black,
   },
-
-  loaderWrapper: {
-    marginTop: 18,
-    alignItems: "center",
-  },
-
   backText: {
     color: COLORS.white,
     marginTop: 30,
     opacity: 0.7,
   },
-
   alert: {
     position: "absolute",
     left: 20,
@@ -344,14 +319,12 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-
   alertMsg: {
     color: COLORS.white,
     flex: 1,
     marginRight: 10,
     fontSize: 13,
   },
-
   alertClose: {
     fontWeight: "800",
     fontSize: 16,

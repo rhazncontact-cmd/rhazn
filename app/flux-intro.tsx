@@ -17,61 +17,59 @@ export default function FluxIntro() {
   const scale = useSharedValue(1);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ============================
-  // 🔐 VÉRIFICATION LÉGALE AVANT ACCÈS
-  // ============================
+  // =========================================
+  // 🔐 VÉRIFICATION SESSION + CONTRAT
+  // =========================================
   useEffect(() => {
     const checkAccess = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { data, error } = await supabase.auth.getUser();
 
-      // 🚫 Pas de session → retour auth
-      if (!user) {
-        router.replace("/auth");
+      // 🔒 Pas de session → login obligatoire
+      if (error || !data.user) {
+        router.replace("/auth/login");
         return;
       }
 
-      // 🔐 Vérification acceptation contrat
-      const { data, error } = await supabase
+      const uid = data.user.id;
+
+      // 🔐 Vérifier acceptation du contrat
+      const { data: profile, error: profileErr } = await supabase
         .from("users")
         .select("contract_accepted")
-        .eq("uid", user.id)
+        .eq("uid", uid)
         .single();
 
-      if (error || !data?.contract_accepted) {
+      if (profileErr || !profile?.contract_accepted) {
         router.replace("/legal/contract");
         return;
       }
 
-      // ✅ Lancement animation + redirection normale
+      // 🎬 Lancement intro + redirection
       startIntro();
     };
 
     checkAccess();
 
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
+    return () => timerRef.current && clearTimeout(timerRef.current);
   }, []);
 
-  // ============================
-  // 🎬 ANIMATIONS + REDIRECTION
-  // ============================
+  // =========================================
+  // 🎬 ANIMATION + REDIRECTION AUTOMATIQUE
+  // =========================================
   const startIntro = () => {
-    // 💫 Pulsation douce
+    // Animation pulsation douce
     scale.value = withRepeat(
       withSequence(
-        withTiming(1.08, { duration: 1200 }),
-        withTiming(1, { duration: 1200 })
+        withTiming(1.08, { duration: 1400 }),
+        withTiming(1, { duration: 1400 })
       ),
       -1,
       true
     );
 
-    // ⏳ Redirection après 10 secondes
+    // Redirection après 10 secondes
     timerRef.current = setTimeout(() => {
-      runOnJS(router.replace)("/rz-roles");
+      runOnJS(router.replace)("/rz-user-dashboard");
     }, 10000);
   };
 
@@ -79,53 +77,51 @@ export default function FluxIntro() {
     transform: [{ scale: scale.value }],
   }));
 
-  // ============================
-  // ✅ UI
-  // ============================
-
+  // =========================================
+  // 🎨 UI
+  // =========================================
   return (
     <View style={styles.container}>
-      {/* ✅ Logo raisin pulsant */}
+      {/* Logo RHAZN animé */}
       <Animated.View
         style={[styles.logoContainer, animatedLogo]}
-        entering={FadeInUp.duration(1200).delay(600)}
+        entering={FadeInUp.duration(1200).delay(400)}
       >
         <Image
-          source={require("@/assets/images/grape.png")}
+          source={require("../assets/images/rz-logo.png")}
           style={styles.logo}
           resizeMode="contain"
         />
       </Animated.View>
 
-      {/* ✅ Titre */}
+      {/* Texte : Titre */}
       <Animated.View entering={FadeInUp.duration(1200).delay(900)}>
-        <Text style={styles.title}>Bienvenue dans le menu principal</Text>
+        <Text style={styles.title}>Bienvenue - Menu principal</Text>
       </Animated.View>
 
-      {/* ✅ Texte 1 */}
+      {/* Texte 1 */}
       <Animated.View entering={FadeInUp.duration(1200).delay(1500)}>
         <Text style={styles.subtitle}>
           Ici, chaque regard est un investissement inestimable.
         </Text>
       </Animated.View>
 
-      {/* ✅ Texte 2 */}
-      <Animated.View entering={FadeInUp.duration(1200).delay(2200)}>
-        <Text style={styles.subtitle}>L’avenir se trouve ici.</Text>
+      {/* Texte 2 */}
+      <Animated.View entering={FadeInUp.duration(1200).delay(2100)}>
+        <Text style={styles.subtitle}>Donc, l’avenir se trouve ici.</Text>
       </Animated.View>
 
-      {/* ✅ Signature */}
-      <Animated.View entering={FadeInUp.duration(1200).delay(3000)}>
-        <Text style={styles.signature}>Bienvenue chez vous.</Text>
+      {/* Signature */}
+      <Animated.View entering={FadeInUp.duration(1200).delay(2700)}>
+        <Text style={styles.signature}>Créer pour révéler des trésors cachés.</Text>
       </Animated.View>
     </View>
   );
 }
 
-// ============================
+// =========================================
 // 🎨 STYLES
-// ============================
-
+// =========================================
 const styles = StyleSheet.create({
   container: {
     flex: 1,

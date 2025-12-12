@@ -88,7 +88,7 @@ export default function RZRoles() {
 
     const tan = data.tan ?? 0;
 
-    if (tan >= 100) router.push("/rz-user-dashboard");
+    if (tan >= 100) router.push("/flux-intro");
     else router.push("/no-acset");
   };
 
@@ -119,7 +119,7 @@ export default function RZRoles() {
 
       {/* HEADER */}
       <View style={styles.header}>
-        <Text style={styles.title}>Autorisation & Navigation</Text>
+        <Text style={styles.title}>Panel</Text>
 
         <TouchableOpacity onPress={() => router.push("/rz-user-dashboard")}>
           <Image

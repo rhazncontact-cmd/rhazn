@@ -1,57 +1,40 @@
-import { decode } from "base64-arraybuffer";
+// app/services/videoStorageService.ts
+
 import * as FileSystem from "expo-file-system";
-import { supabase } from "../../lib/supabase"; // 👈 ton client Supabase
+import { supabase } from "../../lib/supabase";
 
-export async function uploadFluxVideo(uri, onProgress, title, code) {
-  try {
-    const fileName = `flux_${Date.now()}.mp4`;
-    const filePath = `flux-videos/${fileName}`;
+/**
+ * 🎥 Upload sécurisé d’une vidéo vers Supabase Storage (bucket: store)
+ */
+export async function uploadFluxVideo(
+  localUri: string,
+  destinationPath: string,
+  mimeType: string = "video/mp4"
+): Promise<string> {
+  if (!localUri) {
+    throw new Error("No local video URI provided");
+  }
 
-    // 1️⃣ Lire la vidéo en base64
-    const base64 = await FileSystem.readAsStringAsync(uri, {
-      encoding: "base64",
+  // Lire le fichier en base64
+  const base64 = await FileSystem.readAsStringAsync(localUri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+
+  // Conversion en ArrayBuffer
+  const buffer = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+
+  const { error } = await supabase.storage
+    .from("store")
+    .upload(destinationPath, buffer, {
+      contentType: mimeType,
+      upsert: true,
     });
 
-    // 2️⃣ Convertir base64 → buffer
-    const videoData = decode(base64);
-
-    // 3️⃣ Upload vers Supabase Storage
-    const { data, error } = await supabase.storage
-      .from("videos") // 👈 TON BUCKET
-      .upload(filePath, videoData, {
-        contentType: "video/mp4",
-        upsert: false,
-      });
-
-    if (error) {
-      console.log("🔥 Upload storage error:", error);
-      throw error;
-    }
-
-    // 4️⃣ Récupérer l’URL publique
-    const { data: publicUrl } = supabase.storage
-      .from("videos")
-      .getPublicUrl(filePath);
-
-    // 5️⃣ Enregistrer dans la table Supabase "fluxVideos"
-    const { error: dbError } = await supabase
-      .from("fluxVideos")
-      .insert({
-        title,
-        code,
-        video_url: publicUrl.publicUrl,
-        status: "pending",
-        created_at: new Date().toISOString(),
-      });
-
-    if (dbError) {
-      console.log("🔥 Insert DB error:", dbError);
-      throw dbError;
-    }
-
-    return publicUrl.publicUrl;
-  } catch (err) {
-    console.log("🔥 Video Upload Error:", err);
-    throw err;
+  if (error) {
+    console.error("Video upload error:", error);
+    throw error;
   }
+
+  // On retourne le path stocké (PAS une URL)
+  return destinationPath;
 }

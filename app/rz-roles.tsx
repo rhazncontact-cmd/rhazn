@@ -1,13 +1,10 @@
-import { Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import * as NavigationBar from "expo-navigation-bar";
 import { useRouter } from "expo-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Animated,
-  BackHandler,
-  Easing,
   Image,
-  PanResponder,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -15,276 +12,353 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-
 import { supabase } from "../lib/supabase";
+
+/* 🍎 Apple-like Light Palette */
+const COLORS = {
+  bg: "#F5F5F7",
+  card: "#FFFFFF",
+  text: "#1C1C1E",
+  sub: "#6E6E73",
+  border: "#E5E5EA",
+  gold: "#D4AF37",
+  blue: "#007AFF",
+};
+
+type Profile = {
+  full_name: string | null;
+  avatar_url: string | null;
+  email: string | null;
+};
 
 export default function RZRoles() {
   const router = useRouter();
-  const glow = useRef(new Animated.Value(0)).current;
+  const lock = useRef(false);
 
-  // ===============================
-  // 🔥 Animation Glow
-  // ===============================
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(glow, {
-          toValue: 1,
-          duration: 1600,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: false,
-        }),
-        Animated.timing(glow, {
-          toValue: 0,
-          duration: 1600,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: false,
-        }),
-      ])
-    ).start();
-  }, []);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [profileModal, setProfileModal] = useState(false);
 
-  const glowColor = glow.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["#2ecc71", "#8ef6b0"],
-  });
-
-  // ===============================
-  // 🔥 Android NavigationBar → toujours visible
-  // ===============================
+  /* Android system UI */
   useEffect(() => {
     NavigationBar.setVisibilityAsync("visible").catch(() => {});
     NavigationBar.setBehaviorAsync("inset-swipe").catch(() => {});
   }, []);
 
-  // ===============================
-  // 🔥 Swipe → back / exit
-  // ===============================
-  const panResponder = PanResponder.create({
-    onMoveShouldSetPanResponder: (_, g) =>
-      Math.abs(g.dx) > 15 || Math.abs(g.dy) > 15,
-    onPanResponderMove: (_, g) => {
-      if (g.dx < -80) router.back();
-      if (g.dy < -80) BackHandler.exitApp();
-    },
-  });
+  /* ===================== SESSION GUARD (SUPABASE ONLY) ===================== */
+  useEffect(() => {
+    let mounted = true;
 
-  // ===============================
-  // 🔥 USER ACCESS : logic TAN
-  // ===============================
-  const handleUserAccess = async () => {
-    const { data: auth } = await supabase.auth.getUser();
-    const currentUser = auth?.user;
+    (async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-    if (!currentUser) return router.push("/auth/login");
+      if (!mounted) return;
 
-    const { data, error } = await supabase
-      .from("users")
-      .select("tan")
-      .eq("uid", currentUser.id)
-      .single();
+      // ⛔ Pas de session
+      if (!session) {
+        router.replace("/auth/login");
+        return;
+      }
 
-    if (error || !data) return router.push("/no-acset");
+      const userId = session.user.id;
 
-    const tan = data.tan ?? 0;
+      // ✅ sécurité onboarding (source DB)
+      const { data: p, error: pErr } = await supabase
+        .from("profiles")
+        .select("full_name, avatar_url, email, contract_accepted_at, signature_accepted_at")
+        .eq("id", userId)
+        .maybeSingle();
 
-    if (tan >= 100) router.push("/flux-intro");
-    else router.push("/no-acset");
+      if (pErr) {
+        console.warn("RZRoles profile load error:", pErr.message);
+      }
+
+      // ⛔ tunnel légal obligatoire
+      if (!p?.contract_accepted_at) {
+        router.replace("/legal/contract");
+        return;
+      }
+
+      if (!p?.signature_accepted_at) {
+        router.replace("/legal/signature");
+        return;
+      }
+
+      // ✅ profil prêt
+      setProfile({
+        full_name: p?.full_name ?? null,
+        avatar_url: p?.avatar_url ?? null,
+        email: p?.email ?? session.user.email ?? null, // fallback utile
+      });
+
+      setLoading(false);
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [router]);
+
+  /* Navigation sécurisée */
+  const go = (route: string) => {
+    if (lock.current) return;
+    lock.current = true;
+
+    Haptics.selectionAsync().catch(() => {});
+
+    setTimeout(() => {
+      router.push(route);
+      lock.current = false;
+    }, 90);
   };
 
-  // ===============================
-  // 🔥 AGENT
-  // ===============================
-  const goAgentDashboard = () => {
-    router.push("/rz-agent-dashboard");
-  };
+  const initial = useMemo(() => {
+    if (!profile?.full_name) return "U";
+    return profile.full_name.trim().charAt(0).toUpperCase();
+  }, [profile]);
 
-  // ===============================
-  // 🔥 ADMIN
-  // ===============================
-  const goAdminAccess = () => {
-    router.push("/rz-admin/key");
-  };
+  if (loading) {
+    return <View style={{ flex: 1, backgroundColor: COLORS.bg }} />;
+  }
 
-  // ===============================
-  // 🔥 UI
-  // ===============================
   return (
-    <View style={styles.container} {...panResponder.panHandlers}>
-      <StatusBar
-        translucent
-        backgroundColor="transparent"
-        barStyle="light-content"
-      />
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" />
 
       {/* HEADER */}
       <View style={styles.header}>
-        <Text style={styles.title}>Panel</Text>
-
-        <TouchableOpacity onPress={() => router.push("/rz-user-dashboard")}>
-          <Image
-            source={require("../assets/images/rhazn-logo.png")}
-            style={{ width: 45, height: 45, resizeMode: "contain" }}
-          />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView
-        contentContainerStyle={{ paddingBottom: 140, paddingTop: 150 }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* ADMIN CARD */}
         <TouchableOpacity
-          style={[styles.balanceCard, { height: 180 }]}
-          onPress={goAdminAccess}
+          activeOpacity={0.8}
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
+            setProfileModal(true);
+          }}
+          style={styles.avatarWrap}
         >
-          <MaterialIcons name="security" size={60} color="#FFD700" />
-          <Text style={styles.adminTitle}>RZ-ADMIN CARD</Text>
-          <Text style={styles.adminSub}>
-            Accès Mérite · Contrôle · Système
-          </Text>
+          {profile?.avatar_url ? (
+            <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
+          ) : (
+            <View style={styles.avatarFallback}>
+              <Text style={styles.avatarInitial}>{initial}</Text>
+            </View>
+          )}
         </TouchableOpacity>
 
-        {/* GRID */}
-        <View style={styles.actionGrid}>
-          {/* AGENT */}
-          <FeatureCard
-            label="RZ-Agent"
-            icon={<MaterialIcons name="send" size={26} color="#FFD700" />}
-            onPress={goAgentDashboard}
-          />
-
-          {/* UTILISATEUR */}
-          <FeatureCard
-            label="Utilisateur"
-            icon={<Ionicons name="swap-vertical" size={26} color="#4ade80" />}
-            onPress={handleUserAccess}
-          />
-
-          {/* VIDEO-INFOS */}
-          <FeatureCard
-            label="Video-Infos"
-            icon={<MaterialIcons name="movie" size={26} color="#F97316" />}
-            onPress={() => router.push("/video-infos")}
-          />
-
-          {/* APPLY-AGENT */}
-          <FeatureCard
-            label="Postuler — Agent RZ"
-            icon={<Feather name="user-plus" size={24} color="#D4AF37" />}
-            onPress={() => router.push("/apply-agent")}
-          />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.accountName}>
+            {profile?.full_name ?? "Utilisateur"}
+          </Text>
+          <Text style={styles.accountSub}>{profile?.email ?? "—"}</Text>
         </View>
 
-        {/* Divider animé */}
-        <Animated.View
-          style={{
-            height: 2,
-            backgroundColor: glowColor,
-            marginTop: 18,
-            marginBottom: 35,
-            marginHorizontal: 24,
-            borderRadius: 4,
-          }}
+        <View style={styles.logoWrap}>
+          <Image
+            source={require("../assets/images/rz-logo.png")}
+            style={styles.logo}
+          />
+        </View>
+      </View>
+
+      {/* ROLES */}
+      <ScrollView contentContainerStyle={styles.content}>
+        <RoleCard
+          icon={<Ionicons name="person-circle" size={28} color={COLORS.gold} />}
+          label="Compte Utilisateur"
+          sub="Accès libre"
+          onPress={() => go("/user-dashboard")}
+        />
+
+        <RoleCard
+          icon={<MaterialIcons name="badge" size={26} color={COLORS.gold} />}
+          label="Compte Agent / ED"
+          sub="Accès sécurisé"
+          onPress={() => go("/agent-key")}
+        />
+
+        <RoleCard
+          icon={
+            <MaterialIcons
+              name="admin-panel-settings"
+              size={26}
+              color={COLORS.gold}
+            />
+          }
+          label="Compte Admin"
+          sub="Accès sécurisé"
+          onPress={() => go("/admin-key")}
         />
       </ScrollView>
+
+      {/* MODAL PROFIL */}
+      {profileModal && (
+        <View style={styles.modalBackdrop}>
+          <View style={styles.profileModal}>
+            <Text style={styles.modalTitle}>
+              {profile?.full_name ?? "Compte"}
+            </Text>
+
+            <TouchableOpacity
+              style={styles.logoutBtn}
+              onPress={async () => {
+                Haptics.impactAsync(
+                  Haptics.ImpactFeedbackStyle.Medium
+                ).catch(() => {});
+
+                await supabase.auth.signOut();
+
+                setProfileModal(false);
+                router.replace("/auth/login");
+              }}
+            >
+              <Text style={styles.logoutText}>Déconnexion</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.closeBtn}
+              onPress={() => setProfileModal(false)}
+            >
+              <Text style={styles.closeText}>Fermer</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
 
-/*********************
- * FEATURE CARD
- *********************/
-function FeatureCard({ label, icon, onPress }) {
+/* ===================== CARD ===================== */
+function RoleCard({
+  icon,
+  label,
+  sub,
+  onPress,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  sub: string;
+  onPress: () => void;
+}) {
   return (
-    <TouchableOpacity onPress={onPress} style={styles.featureCard}>
-      <View style={styles.featureIcon}>{icon}</View>
-      <Text style={styles.featureLabel}>{label}</Text>
+    <TouchableOpacity
+      activeOpacity={0.85}
+      style={styles.card}
+      onPress={onPress}
+    >
+      <View style={styles.cardIcon}>{icon}</View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.cardLabel}>{label}</Text>
+        <Text style={styles.cardSub}>{sub}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={COLORS.sub} />
     </TouchableOpacity>
   );
 }
 
-/*********************
- * STYLES — VERSION FINALE
- *********************/
+/* ===================== STYLES ===================== */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#000" },
+  container: { flex: 1, backgroundColor: COLORS.bg },
 
   header: {
-    position: "absolute",
-    top: 25,
-    left: 0,
-    right: 0,
-    paddingTop: 55,
-    paddingHorizontal: 20,
-    paddingBottom: 10,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    zIndex: 999,
-  },
-
-  // ✅ TITRE EN BLANC (MODIFICATION APPLIQUÉE)
-  title: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
-
-  balanceCard: {
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#0d0d0d",
+    marginTop: 60,
     marginHorizontal: 20,
-    borderRadius: 18,
+    padding: 18,
+    borderRadius: 22,
+    backgroundColor: COLORS.card,
+    flexDirection: "row",
+    gap: 16,
+    elevation: 4,
+  },
+
+  avatarWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     borderWidth: 1,
-    borderColor: "#1B3B1B",
+    borderColor: COLORS.border,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  avatar: { width: 64, height: 64, borderRadius: 32 },
+
+  avatarFallback: {
+    backgroundColor: "#EFEFF4",
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  avatarInitial: { fontSize: 22, fontWeight: "700" },
+
+  accountName: { fontSize: 18, fontWeight: "800" },
+
+  accountSub: { fontSize: 13, color: COLORS.sub },
+
+  logoWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  logo: { width: 28, height: 28 },
+
+  content: { padding: 20, paddingTop: 36 },
+
+  card: {
+    backgroundColor: COLORS.card,
+    borderRadius: 20,
+    padding: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+
+  cardIcon: { width: 42, alignItems: "center" },
+
+  cardLabel: { fontSize: 16, fontWeight: "700" },
+
+  cardSub: { fontSize: 12, color: COLORS.sub },
+
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.25)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  profileModal: {
+    width: "86%",
+    backgroundColor: COLORS.card,
+    borderRadius: 28,
     padding: 22,
   },
 
-  adminTitle: {
-    color: "#FFD700",
-    marginTop: 10,
-    fontWeight: "700",
-    fontSize: 16,
-  },
-
-  adminSub: {
-    color: "#4ade80",
-    fontSize: 12,
-  },
-
-  actionGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    marginTop: 20,
-  },
-
-  featureCard: {
-    width: "48%",
-    backgroundColor: "#111",
-    paddingVertical: 20,
-    marginBottom: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#222",
-    alignItems: "center",
-  },
-
-  featureIcon: {
-    backgroundColor: "#222",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: "#333",
-  },
-
-  featureLabel: {
-    color: "#fff",
-    fontSize: 13,
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    marginBottom: 20,
     textAlign: "center",
   },
+
+  logoutBtn: {
+    backgroundColor: "#FFECEC",
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginBottom: 12,
+  },
+
+  logoutText: { color: "#D70015", fontWeight: "800" },
+
+  closeBtn: { paddingVertical: 12, alignItems: "center" },
+
+  closeText: { color: COLORS.blue, fontWeight: "700" },
 });

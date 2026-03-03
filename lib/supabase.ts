@@ -1,35 +1,53 @@
+// lib/supabase.ts — FINAL JWT-SAFE / RLS-SAFE / EXPO-SAFE
+
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createClient } from "@supabase/supabase-js";
-import * as Linking from "expo-linking";
 
-// ---------------------------------------------------------------------------
-// 📌 URL de callback pour l’app RHAZN (dans app.config.js: scheme: "rhazn")
-// ---------------------------------------------------------------------------
-const redirectUrl = Linking.createURL("auth/callback", {
-  scheme: "rhazn",
-});
-
-// ---------------------------------------------------------------------------
-// 🚀 Client Supabase pour Expo Mobile (Magic Link + OAuth + PKCE)
-// ---------------------------------------------------------------------------
+/**
+ * 🚀 Supabase client RHAZN — MOBILE FIRST (JWT SAFE)
+ *
+ * - Auth: email + mot de passe uniquement
+ * - Pas de magic link
+ * - Pas de OAuth
+ * - Pas de PKCE
+ * - Pas de callback URL
+ * - Session persistante fiable (AsyncStorage)
+ * - JWT toujours injecté dans PostgREST
+ * - Compatible Expo Router + RLS
+ * - ✅ Suppression définitive du warning navigatorLock (Expo / Android)
+ */
 export const supabase = createClient(
   process.env.EXPO_PUBLIC_SUPABASE_URL!,
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
   {
     auth: {
+      // 💾 STOCKAGE NATIF OBLIGATOIRE (clé de la correction)
+      storage: AsyncStorage,
+
+      // 🔁 Rafraîchissement auto des tokens
       autoRefreshToken: true,
+
+      // 💾 Persistance locale réelle de la session
       persistSession: true,
 
-      // ESSENTIEL pour Expo Router
+      // ❌ NE PAS lire la session depuis l’URL (mobile)
       detectSessionInUrl: false,
 
-      // NE PAS FORCER PKCE, sinon les emails activations NE FONCTIONNENT PLUS
-      // flowType: "pkce",
+      // ✅ Flow classique email/password (stable)
+      flowType: "implicit",
 
-      // correct → permet MagicLink, Email Confirmation & PKCE fallback
-      flowType: "magiclink",
+      // 🆕 IMPORTANT — Expo / React Native fix
+      // ➜ empêche Supabase d’attendre navigator.locks (inexistant en RN)
+      // ➜ supprime définitivement :
+      //    "@supabase/gotrue-js: navigatorLock acquire timed out"
+      lockTimeout: 0,
+    },
 
-      // CALLBACK iOS / Android
-      redirectTo: redirectUrl,
+    // 🧠 Info client utile debug PostgREST
+    global: {
+      headers: {
+        "X-Client-Info": "rhazn-mobile",
+      },
     },
   }
 );

@@ -1,417 +1,511 @@
+// ======================================================
+// RHAZN — SIGNATURE SCREEN (APPLE-LIKE • PREMIUM • FIXED)
+// UI responsive • no overlap • success overlay luxe
+// Redirect: legal/signature -> /rz-roles
+// ======================================================
+
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-    Animated,
-    KeyboardAvoidingView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Animated,
+  Easing,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
+
 import { supabase } from "../../lib/supabase";
 
-const TARGET_TEXT = "Le Baobab";
+/* ======================================================
+TARGET
+====================================================== */
+const TARGET_TEXT = "yrotS evoL etidnY 1yeM dn1 b1bo1B eL";
 
-// 🎨 PALETTE PREMIUM
+/* ======================================================
+COLORS — PREMIUM
+====================================================== */
 const COLORS = {
-  black: "#000000",
-  card: "#111111",
-  white: "#FFFFFF",
-  gray: "#9A9A9A",
-  green: "#00C853",
-  crimson: "#B00020",
+  bg: "#000",
+  card: "#FFFFFF",
+  text: "#0A0A0A",
+  sub: "#6B7280",
+  border: "rgba(0,0,0,0.08)",
   gold: "#D4AF37",
+  success: "#10B981",
+  error: "#EF4444",
+  soft: "rgba(255,255,255,0.08)",
+  dark: "rgba(0,0,0,0.72)",
 };
 
-// Normalisation pour éviter les faux négatifs
-const normalize = (t: string) => t.trim().toLowerCase();
-const normalizedTarget = normalize(TARGET_TEXT);
+/* ======================================================
+UTIL
+====================================================== */
+const normalize = (t: string) =>
+  t
+    .normalize("NFKC")
+    .replace(/[10]/g, (c) => (c === "1" ? "l" : "o"))
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 
-export default function SignaturePremiumScreen() {
+/* ======================================================
+SCREEN
+====================================================== */
+export default function SignatureAppleScreen() {
   const router = useRouter();
+  const lockRef = useRef(false);
 
   const [value, setValue] = useState("");
-  const [alert, setAlert] = useState<string | null>(null);
-  const [isError, setIsError] = useState(false);
+  const [checking, setChecking] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
-  const [locked, setLocked] = useState(false);
+  const [hint, setHint] = useState<string | null>(null);
 
-  // Progression de frappe
-  const progress = Math.min(
-    100,
-    (value.length / TARGET_TEXT.length) * 100
-  );
-  const charsRemaining = Math.max(0, TARGET_TEXT.length - value.length);
+  const normalizedTarget = useMemo(() => normalize(TARGET_TEXT), []);
+  const progress = Math.min(1, value.length / TARGET_TEXT.length);
 
-  // Animations
-  const successScale = useRef(new Animated.Value(0)).current; // ✔︎
-  const signatureOpacity = useRef(new Animated.Value(0)).current; // "Le Baobab" or
-  const signatureScale = useRef(new Animated.Value(0.9)).current;
-  const sealScale = useRef(new Animated.Value(0)).current; // sceau
-  const sealOpacity = useRef(new Animated.Value(0)).current;
+  /* ===================== ANIMATIONS ===================== */
+  const float = useRef(new Animated.Value(0)).current;
 
-  // ============================
-  // 🔐 VÉRIFIER SESSION ACTIVE
-  // ============================
+  const overlayOpacity = useRef(new Animated.Value(0)).current;
+  const overlayScale = useRef(new Animated.Value(0.96)).current;
+
   useEffect(() => {
-    supabase.auth.getUser().then(({ data, error }) => {
-      if (error || !data.user) {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(float, {
+          toValue: -6,
+          duration: 2200,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(float, {
+          toValue: 0,
+          duration: 2200,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, [float]);
+
+  /* ======================================================
+  SESSION CHECK
+  ====================================================== */
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!alive) return;
+
+      if (!session) {
         router.replace("/auth/login");
-      } else {
-        setUserId(data.user.id);
-      }
-    });
-  }, []);
-
-  const showAlert = (msg: string, isErr = false) => {
-    setIsError(isErr);
-    setAlert(msg);
-    setTimeout(() => setAlert(null), 2500);
-  };
-
-  // ============================
-  // ✍️ LOGIQUE DE SIGNATURE PREMIUM
-  // ============================
-  const handleChange = async (text: string) => {
-    if (locked) return;
-
-    // ❌ Anti-collage : plus d’un caractère à la fois
-    if (text.length - value.length > 1) {
-      showAlert("Le collage est désactivé. Tapez manuellement.", true);
-      return;
-    }
-
-    // Haptique léger sur chaque frappe
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-    setValue(text);
-    const normalizedInput = normalize(text);
-
-    // 🎯 Succès : texte correct
-    if (normalizedInput === normalizedTarget) {
-      if (!userId) {
-        showAlert("Session invalide. Reconnectez-vous.", true);
         return;
       }
 
-      setLocked(true);
+      const uid = session.user.id;
+      setUserId(uid);
 
-      // Haptique succès Apple-like
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const { data } = await supabase
+        .from("profiles")
+        .select("contract_accepted_at, signature_accepted_at")
+        .eq("id", uid)
+        .maybeSingle();
 
-      // ✔︎ check animé
-      Animated.timing(successScale, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }).start();
-
-      // Animation "Le Baobab" en or + sceau RHAZN
-      Animated.sequence([
-        Animated.parallel([
-          Animated.timing(signatureOpacity, {
-            toValue: 1,
-            duration: 600,
-            useNativeDriver: true,
-          }),
-          Animated.spring(signatureScale, {
-            toValue: 1,
-            friction: 6,
-            useNativeDriver: true,
-          }),
-        ]),
-        Animated.delay(200),
-        Animated.parallel([
-          Animated.timing(sealOpacity, {
-            toValue: 1,
-            duration: 250,
-            useNativeDriver: true,
-          }),
-          Animated.spring(sealScale, {
-            toValue: 1,
-            friction: 4,
-            useNativeDriver: true,
-          }),
-        ]),
-      ]).start();
-
-      try {
-        const { error } = await supabase
-          .from("profiles")
-          .update({
-            contract_accepted: true,
-            contract_accepted_at: new Date().toISOString(),
-          })
-          .eq("id", userId);
-
-        if (error) {
-          console.log("SIGNATURE_DB_ERROR:", error);
-          showAlert("Erreur lors de la validation.", true);
-          setLocked(false);
-          return;
-        }
-
-        showAlert("Signature validée.", false);
-
-        // Laisse respirer l’animation avant redirection
-        setTimeout(() => {
-          router.replace("/rz-roles");
-        }, 1500);
-      } catch (e) {
-        console.log("SIGNATURE_FATAL:", e);
-        showAlert("Erreur réseau. Réessayez.", true);
-        setLocked(false);
+      // ✅ si contrat pas accepté → contrat
+      if (!data?.contract_accepted_at) {
+        router.replace("/legal/contract");
+        return;
       }
 
+      // ✅ si déjà signé → rz-roles (flow demandé)
+      if (data?.signature_accepted_at) {
+        router.replace("/rz-roles");
+        return;
+      }
+
+      setChecking(false);
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [router]);
+
+  /* ======================================================
+  SUCCESS OVERLAY (APPLE-LIKE)
+  ====================================================== */
+  const showSuccessOverlay = () => {
+    overlayOpacity.setValue(0);
+    overlayScale.setValue(0.96);
+
+    Animated.parallel([
+      Animated.timing(overlayOpacity, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.spring(overlayScale, {
+        toValue: 1,
+        friction: 7,
+        tension: 90,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  /* ======================================================
+  COMMIT SIGNATURE (RPC + FALLBACK)
+  ====================================================== */
+  const commitSignature = async (uid: string) => {
+    // ✅ RPC préféré
+    const { error } = await supabase.rpc("rz_accept_signature", {
+      p_user_id: uid,
+    });
+
+    if (!error) return true;
+
+    // 🔁 fallback si RPC absent / erreur schéma
+    const fallback = await supabase
+      .from("profiles")
+      .update({ signature_accepted_at: new Date().toISOString() })
+      .eq("id", uid);
+
+    return !fallback.error;
+  };
+
+  /* ======================================================
+  HANDLE INPUT
+  ====================================================== */
+  const handleChange = async (text: string) => {
+    if (checking || lockRef.current) return;
+
+    // anti paste brutal (tu gardes ta règle)
+    if (text.length - value.length > 1) return;
+
+    setHint(null);
+    setValue(text);
+
+    if (text.length < TARGET_TEXT.length) return;
+
+    if (normalize(text) !== normalizedTarget) {
+      setHint("Signature incorrecte. Recopiez exactement le texte affiché.");
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
       return;
     }
 
-    // ❌ Mauvais texte une fois la longueur atteinte
-    if (text.length >= TARGET_TEXT.length && normalizedInput !== normalizedTarget) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      showAlert(`Texte incorrect.\nTexte attendu : "${TARGET_TEXT}"`, true);
+    if (!userId) return;
+
+    lockRef.current = true;
+
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+
+    const ok = await commitSignature(userId);
+
+    if (!ok) {
+      lockRef.current = false;
+      setHint("Erreur réseau. Réessayez.");
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      return;
     }
+
+    showSuccessOverlay();
+
+    // ✅ redirection demandée
+    setTimeout(() => {
+      router.replace("/rz-roles");
+    }, 5000);
   };
 
+  /* ======================================================
+  LOADING
+  ====================================================== */
+  if (checking) {
+    return (
+      <SafeAreaView style={styles.loadingWrap}>
+        <Text style={{ color: "rgba(255,255,255,0.7)", fontWeight: "800" }}>
+          Vérification…
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
+  /* ======================================================
+  UI
+  ====================================================== */
   return (
-    <KeyboardAvoidingView behavior="padding" style={styles.full}>
-      <View style={styles.centerWrap}>
-        {/* CARTE PRINCIPALE */}
-        <View style={styles.card}>
-          <Text style={styles.title}>Signature Finale</Text>
-
-          <Text style={styles.subtitle}>Tapez exactement :</Text>
-
-          <Text style={styles.target}>{TARGET_TEXT}</Text>
-
-          {/* BARRE DE PROGRESSION */}
-          <View style={styles.progressBackground}>
-            <View
-              style={[
-                styles.progressFill,
-                {
-                  width: `${progress}%`,
-                  backgroundColor: locked ? COLORS.green : COLORS.gold,
-                },
-              ]}
-            />
+    <SafeAreaView style={styles.safe}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.container}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* HEADER PREMIUM */}
+          <View style={styles.header}>
+            <Text style={styles.brand}>RHAZN</Text>
+            <Text style={styles.headerTitle}>Signature numérique</Text>
+            <Text style={styles.headerSub}>
+              Confirmez votre identité. Recopiez le code exactement tel qu’affiché.
+            </Text>
           </View>
 
-          {/* COMPTEUR RESTANT */}
-          {!locked && (
-            <Text style={styles.remaining}>
-              {charsRemaining > 0
-                ? `Encore ${charsRemaining} caractère(s)...`
-                : "Vérification…"}
-            </Text>
-          )}
+          {/* MAIN CARD */}
+          <Animated.View style={[styles.card, { transform: [{ translateY: float }] }]}>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Code à recopier</Text>
 
-          <TextInput
-            value={value}
-            onChangeText={handleChange}
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!locked}
-            placeholder="Tapez ici…"
-            placeholderTextColor={COLORS.gray}
-            style={[
-              styles.input,
-              { borderColor: isError ? COLORS.crimson : COLORS.green },
-            ]}
-          />
+              <View style={styles.targetPill}>
+                <Text selectable style={styles.targetText}>
+                  {TARGET_TEXT}
+                </Text>
+              </View>
 
-          {alert && (
-            <Text
-              style={[
-                styles.alert,
-                { color: isError ? COLORS.crimson : COLORS.green },
-              ]}
-            >
-              {alert}
-            </Text>
-          )}
-        </View>
+              {/* progress premium */}
+              <View style={styles.progressRow}>
+                <View style={styles.progressBg}>
+                  <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+                </View>
+                <Text style={styles.progressTxt}>{Math.round(progress * 100)}%</Text>
+              </View>
+            </View>
 
-        {/* ✔︎ CHECK APPLE-LIKE */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Votre saisie</Text>
+
+              <TextInput
+                value={value}
+                onChangeText={handleChange}
+                placeholder="Saisir ici…"
+                placeholderTextColor="#9CA3AF"
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.input}
+              />
+
+              {hint ? <Text style={styles.hint}>{hint}</Text> : null}
+
+              <View style={styles.noteBox}>
+                <Text style={styles.noteTitle}>Règle</Text>
+                <Text style={styles.noteText}>
+                  Aucun collage. Une seule frappe à la fois. La signature doit correspondre parfaitement.
+                </Text>
+              </View>
+            </View>
+          </Animated.View>
+
+          <View style={{ height: 24 }} />
+        </ScrollView>
+
+        {/* SUCCESS OVERLAY — Apple-like / RHAZN */}
         <Animated.View
+          pointerEvents="none"
           style={[
-            styles.successOverlay,
+            styles.overlay,
             {
-              transform: [{ scale: successScale }],
-              opacity: successScale,
+              opacity: overlayOpacity,
             },
           ]}
         >
-          <Text style={styles.successText}>✔︎</Text>
-        </Animated.View>
-
-        {/* ✨ SIGNATURE "Le Baobab" EN OR + SCEAU RHAZN */}
-        <Animated.View
-          style={[
-            styles.signatureAnimContainer,
-            {
-              opacity: signatureOpacity,
-              transform: [{ scale: signatureScale }],
-            },
-          ]}
-        >
-          <Text style={styles.signatureGold}>Le Baobab</Text>
-          <View style={styles.signatureUnderline} />
-
           <Animated.View
             style={[
-              styles.seal,
+              styles.successCard,
               {
-                opacity: sealOpacity,
-                transform: [{ scale: sealScale }],
+                transform: [{ scale: overlayScale }],
               },
             ]}
           >
-            <Text style={styles.sealTextTop}>RHAZN</Text>
-            <Text style={styles.sealTextBottom}>VALIDÉ</Text>
+            <Text style={styles.swiTitle}>SWIV NOU…!</Text>
+            <Text style={styles.swiSub}>Accès confirmé • Signature validée</Text>
+            <View style={styles.swiLine} />
+            <Text style={styles.swiFoot}>Redirection en cours…</Text>
           </Animated.View>
         </Animated.View>
-      </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
-// =======================
-// STYLES PREMIUM
-// =======================
+/* ======================================================
+STYLES — APPLE-LIKE / RHAZN PREMIUM
+====================================================== */
 const styles = StyleSheet.create({
-  full: {
+  safe: { flex: 1, backgroundColor: COLORS.bg },
+  container: { flex: 1, backgroundColor: COLORS.bg },
+  scroll: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 28 },
+
+  loadingWrap: {
     flex: 1,
-    backgroundColor: COLORS.black,
+    backgroundColor: COLORS.bg,
     justifyContent: "center",
     alignItems: "center",
   },
 
-  centerWrap: {
-    width: "100%",
-    paddingHorizontal: 24,
-    alignItems: "center",
+  header: { alignItems: "center", marginBottom: 14 },
+  brand: {
+    color: COLORS.gold,
+    fontWeight: "900",
+    letterSpacing: 2,
+    fontSize: 12,
+    marginBottom: 6,
+  },
+  headerTitle: { color: "#FFF", fontWeight: "900", fontSize: 22 },
+  headerSub: {
+    color: "rgba(255,255,255,0.7)",
+    textAlign: "center",
+    marginTop: 8,
+    lineHeight: 18,
+    maxWidth: 340,
+    fontSize: 12,
   },
 
   card: {
-    width: "100%",
     backgroundColor: COLORS.card,
     borderRadius: 24,
-    padding: 24,
-    alignItems: "center",
-    elevation: 10,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 28,
+    shadowOffset: { width: 0, height: 18 },
+    elevation: 18,
   },
 
-  title: {
-    color: COLORS.white,
-    fontSize: 22,
-    fontWeight: "800",
-    marginBottom: 12,
-  },
-
-  subtitle: {
-    color: COLORS.gray,
+  section: { marginBottom: 14 },
+  sectionTitle: {
+    color: COLORS.text,
+    fontWeight: "900",
     fontSize: 13,
-    marginBottom: 12,
+    marginBottom: 10,
   },
 
-  target: {
-    color: COLORS.white,
-    fontWeight: "800",
-    fontSize: 18,
-    marginBottom: 18,
+  targetPill: {
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    backgroundColor: "#F7F7F9",
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.06)",
+  },
+  targetText: {
+    color: "#111",
+    fontWeight: "900",
+    textAlign: "center",
+    fontSize: 14,
+    lineHeight: 20,
+    letterSpacing: 0.2,
   },
 
-  // Barre de progression
-  progressBackground: {
-    width: "100%",
-    height: 6,
-    borderRadius: 4,
-    backgroundColor: "#222",
+  progressRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 12,
+  },
+  progressBg: {
+    flex: 1,
+    height: 8,
+    backgroundColor: "#ECECEC",
+    borderRadius: 999,
     overflow: "hidden",
-    marginBottom: 8,
   },
   progressFill: {
     height: "100%",
-    borderRadius: 4,
-  },
-
-  remaining: {
-    color: COLORS.gray,
-    fontSize: 12,
-    marginBottom: 14,
-    fontStyle: "italic",
-  },
-
-  input: {
-    width: "100%",
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    color: COLORS.white,
-    fontSize: 16,
-    backgroundColor: "#0A0A0A",
-  },
-
-  alert: {
-    marginTop: 14,
-    textAlign: "center",
-    fontSize: 13,
-  },
-
-  // ✔︎ check
-  successOverlay: {
-    position: "absolute",
-    top: "42%",
-    alignSelf: "center",
-  },
-  successText: {
-    fontSize: 90,
-    color: COLORS.green,
-    fontWeight: "300",
-  },
-
-  // Signature "Le Baobab" + sceau
-  signatureAnimContainer: {
-    marginTop: 40,
-    alignItems: "center",
-  },
-  signatureGold: {
-    color: COLORS.gold,
-    fontSize: 24,
-    fontWeight: "800",
-    letterSpacing: 1.2,
-  },
-  signatureUnderline: {
-    marginTop: 4,
-    width: 140,
-    height: 2,
     backgroundColor: COLORS.gold,
     borderRadius: 999,
   },
+  progressTxt: { color: "#6B7280", fontWeight: "900", fontSize: 12 },
 
-  seal: {
-    marginTop: 22,
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    borderWidth: 2,
-    borderColor: COLORS.gold,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.8)",
+  input: {
+    backgroundColor: "#F7F7F9",
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.08)",
+    color: "#111",
+    fontWeight: "800",
   },
-  sealTextTop: {
+
+  hint: {
+    marginTop: 10,
+    color: COLORS.error,
+    fontWeight: "800",
+    fontSize: 12,
+  },
+
+  noteBox: {
+    marginTop: 12,
+    backgroundColor: "rgba(212,175,55,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(212,175,55,0.25)",
+    padding: 12,
+    borderRadius: 16,
+  },
+  noteTitle: { color: "#111", fontWeight: "900", marginBottom: 6, fontSize: 12 },
+  noteText: { color: "#333", lineHeight: 18, fontSize: 12, fontWeight: "600" },
+
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: COLORS.dark,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 22,
+  },
+
+  successCard: {
+    width: "100%",
+    maxWidth: 360,
+    backgroundColor: "#FFF",
+    borderRadius: 24,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.08)",
+
+    shadowColor: COLORS.gold,
+    shadowOpacity: 0.35,
+    shadowRadius: 30,
+    shadowOffset: { width: 0, height: 14 },
+    elevation: 22,
+  },
+
+  swiTitle: {
     color: COLORS.gold,
-    fontSize: 14,
+    fontSize: 22,
+    fontWeight: "900",
+    textAlign: "center",
+    letterSpacing: 0.3,
+  },
+  swiSub: {
+    fontSize: 12,
+    color: "#333",
+    textAlign: "center",
+    marginTop: 6,
     fontWeight: "700",
   },
-  sealTextBottom: {
-    color: COLORS.gold,
+  swiLine: {
+    height: 1,
+    backgroundColor: "rgba(0,0,0,0.08)",
+    marginVertical: 12,
+  },
+  swiFoot: {
     fontSize: 12,
-    marginTop: 4,
-    letterSpacing: 1.1,
+    color: "#6B7280",
+    textAlign: "center",
+    fontWeight: "800",
   },
 });

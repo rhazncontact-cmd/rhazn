@@ -1,12 +1,8 @@
 import { Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
-import * as NavigationBar from "expo-navigation-bar";
 import { useRouter } from "expo-router";
-import { useEffect, useRef } from "react";
 import {
-  Animated,
-  Easing,
   Image,
-  PanResponder,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -14,144 +10,77 @@ import {
   View,
 } from "react-native";
 
-import AdminGuard from "../components/AdminGuard"; // ✅ Sécurité admin
+/* ===================== THEME ===================== */
+const GOLD = "#D4AF37";
 
+/* ===================== SCREEN ===================== */
 export default function RZAdminWallet() {
   const router = useRouter();
 
-  // ============================================================
-  // 🔥 Android Navigation Bar
-  // ============================================================
-  useEffect(() => {
-    NavigationBar.setVisibilityAsync("visible").catch(() => {});
-    NavigationBar.setBehaviorAsync("inset-swipe").catch(() => {});
-  }, []);
-
-  // ============================================================
-  // 🔥 Swipe gauche → retour
-  // ============================================================
-  const panResponder = PanResponder.create({
-    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 15,
-    onPanResponderMove: (_, g) => {
-      if (g.dx < -70) router.back();
-    },
-  });
-
-  // ============================================================
-  // 🔥 Glow Animation
-  // ============================================================
-  const glow = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(glow, {
-          toValue: 1,
-          duration: 1600,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: false,
-        }),
-        Animated.timing(glow, {
-          toValue: 0,
-          duration: 1600,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: false,
-        }),
-      ])
-    ).start();
-  }, []);
-
-  const glowColor = glow.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["#A37E00", "#FFD700"],
-  });
-
-  // ============================================================
-  // 🔥 UI
-  // ============================================================
   return (
-    <AdminGuard>
-      <View style={styles.container} {...panResponder.panHandlers}>
-        <StatusBar
-          translucent
-          backgroundColor="transparent"
-          barStyle="light-content"
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
+
+      {/* HEADER */}
+      <View style={styles.header}>
+        <Text style={styles.title}>RZ · ADMIN</Text>
+
+        <TouchableOpacity onPress={() => router.replace("/rz-roles")}>
+          <Image
+            source={require("../../assets/images/rhazn-logo.png")}
+            style={styles.logo}
+          />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.content}>
+        <Text style={styles.subtitle}>Autorité du Mérite</Text>
+        <View style={styles.divider} />
+
+        {/* ACTIONS */}
+        <AdminCard
+          icon={<MaterialIcons name="security" size={26} color={GOLD} />}
+          title="Agents & Accréditations"
+          onPress={() => router.push("/rz-admin/agents")}
         />
 
-        {/* HEADER */}
-        <View style={styles.header}>
-          <Text style={styles.title}>RZ-ADMIN</Text>
-
-          <TouchableOpacity onPress={() => router.replace("/rz-user-dashboard")}>
-            <Image
-              source={require("../../assets/images/rhazn-logo.png")}
-              style={styles.logo}
-            />
-          </TouchableOpacity>
-        </View>
-
-        {/* Spacer */}
-        <View style={{ height: 135 }} />
-
-        <Text style={styles.subtitle}>Autorité Sacrée du Mérite</Text>
-
-        <Animated.View
-          style={[styles.divider, { backgroundColor: glowColor }]}
+        <AdminCard
+          icon={<Ionicons name="megaphone" size={24} color={GOLD} />}
+          title="Communication"
+          onPress={() => router.push("/rz-admin-communication")}
         />
 
-        {/* ====================================================== */}
-        {/* MAIN GRID */}
-        {/* ====================================================== */}
-        <View style={styles.cards}>
-          <AdminCard
-            icon={<MaterialIcons name="security" size={30} color="#FFD700" />}
-            title="Vérifier & Approuver Agents"
-            onPress={() => router.push("/rz-admin/agents")}
-          />
+        <AdminCard
+          icon={<MaterialIcons name="movie" size={26} color={GOLD} />}
+          title="Validation Vidéos"
+          onPress={() => router.push("/rz-admin/videos")}
+        />
 
-          {/* ✅ RZ-COMMUNICATION — ACTIVÉ */}
-          <AdminCard
-            icon={<Ionicons name="megaphone" size={28} color="#38bdf8" />}
-            title="RZ-Communication (Diffusion)"
-            onPress={() => router.push("/rz-admin-communication")}
-          />
+        <AdminCard
+          icon={<Feather name="award" size={24} color={GOLD} />}
+          title="Classements & QOB"
+          onPress={() => router.push("/rz-admin/qob")}
+        />
 
-          <AdminCard
-            icon={
-              <MaterialIcons name="movie-filter" size={30} color="#4ade80" />
-            }
-            title="Validations Flux-Vidéos"
-            onPress={() => router.push("/rz-admin/videos")}
-          />
+        <AdminCard
+          icon={<Ionicons name="wallet" size={24} color={GOLD} />}
+          title="Finance · ACSET · TAN"
+          onPress={() => router.push("/rz-admin/finance")}
+        />
 
-          <AdminCard
-            icon={<Feather name="award" size={28} color="#FACC15" />}
-            title="Contrôle Classements / QOB"
-            onPress={() => router.push("/rz-admin/qob")}
-          />
-
-          <AdminCard
-            icon={<Ionicons name="wallet" size={28} color="#22c55e" />}
-            title="ACSET / TAN / Retraits"
-            onPress={() => router.push("/rz-admin/finance")}
-          />
-
-          <AdminCard
-            icon={<Feather name="shield-off" size={27} color="#ef4444" />}
-            title="Anti-Fraude & Pureté"
-            onPress={() => router.push("/rz-admin/ethics")}
-          />
-        </View>
+        <AdminCard
+          icon={<Feather name="shield-off" size={24} color="#EF4444" />}
+          title="Anti-Fraude & Éthique"
+          onPress={() => router.push("/rz-admin/ethics")}
+        />
 
         <Text style={styles.footer}>RHAZN — Sanctuaire du Mérite</Text>
-      </View>
-    </AdminGuard>
+      </ScrollView>
+    </View>
   );
 }
 
-/* =======================================================
-   CARD COMPONENT
-======================================================= */
+/* ===================== CARD ===================== */
 function AdminCard({
   icon,
   title,
@@ -169,72 +98,77 @@ function AdminCard({
   );
 }
 
-/* =======================================================
-   STYLES — VERSION FINALE
-======================================================= */
+/* ===================== STYLES ===================== */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#000" },
+  container: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
 
   header: {
-    position: "absolute",
-    top: 15,
-    left: 0,
-    right: 0,
-    paddingTop: 40,
+    paddingTop: 60,
+    paddingBottom: 16,
     paddingHorizontal: 20,
-    paddingBottom: 10,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.55)",
-    zIndex: 999,
   },
 
   title: {
-    fontSize: 22,
-    fontWeight: "400",
-    color: "#FFD700",
-    opacity: 0.85,
+    color: GOLD,
+    fontSize: 20,
+    fontWeight: "700",
     letterSpacing: 1,
   },
 
+  logo: {
+    width: 40,
+    height: 40,
+    resizeMode: "contain",
+  },
+
+  content: {
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+  },
+
   subtitle: {
-    color: "#C7C7C7",
+    color: "#aaa",
     fontSize: 14,
-    marginLeft: 22,
     marginBottom: 6,
   },
 
-  logo: { width: 50, height: 50, resizeMode: "contain" },
-
   divider: {
     height: 2,
-    width: "46%",
-    marginLeft: 22,
-    marginBottom: 28,
-    borderRadius: 8,
+    width: "45%",
+    backgroundColor: GOLD,
+    borderRadius: 4,
+    marginBottom: 24,
   },
-
-  cards: { paddingHorizontal: 18, gap: 14 },
 
   card: {
     backgroundColor: "#0B0B0B",
     borderRadius: 14,
-    paddingVertical: 22,
-    borderWidth: 1,
-    borderColor: "#222",
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    marginBottom: 14,
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
-    paddingLeft: 18,
+    borderWidth: 1,
+    borderColor: "#222",
   },
 
-  cardText: { color: "#fff", fontSize: 15, fontWeight: "600" },
+  cardText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
 
   footer: {
-    color: "#6C6C6C",
-    marginLeft: 22,
-    marginTop: 35,
+    color: "#666",
+    textAlign: "center",
+    marginTop: 30,
     fontSize: 11,
   },
 });

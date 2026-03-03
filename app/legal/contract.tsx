@@ -1,47 +1,45 @@
-import { useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
-import {
-    Image,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    TouchableWithoutFeedback,
-    View,
-} from "react-native";
+// ======================================================
+// RHAZN — CONTRACT SCREEN FINAL PRODUCTION (UPDATED UX)
+// Accept = fin du texte • Refuser = +3 espaces
+// Redirect: legal/contract -> legal/signature
+// ======================================================
 
 import * as Haptics from "expo-haptics";
 import * as NavigationBar from "expo-navigation-bar";
+import { useRouter } from "expo-router";
+import { useEffect, useRef, useState } from "react";
+import {
+  Image,
+  KeyboardAvoidingView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+
 import { supabase } from "../../lib/supabase";
 import LoaderRhazn from "../components/LoaderRhazn";
 
-// 🎨 PALETTE RHAZN PREMIUM
+/* ====================================================== */
 const COLORS = {
-  black: "#000000",
+  black: "#000",
   card: "#101010",
-  cardSoft: "#151515",
-  white: "#FFFFFF",
+  white: "#FFF",
   gray: "#9A9A9A",
-  softGray: "#BEBEBE",
   gold: "#D4AF37",
   red: "#C62828",
-  border: "#1E1E1E",
-  green: "#00C853",
 };
 
-// =========================
-// 📜 TEXTE DU CONTRAT
-// =========================
+/* ======================================================
+TEXT
+====================================================== */
 const generateContractText = () => {
-  const today = new Date();
-  const d = String(today.getDate()).padStart(2, "0");
-  const m = String(today.getMonth() + 1).padStart(2, "0");
-  const y = today.getFullYear();
+  const d = String(new Date().getDate()).padStart(2, "0");
+  const m = String(new Date().getMonth() + 1).padStart(2, "0");
+  const y = new Date().getFullYear();
 
-  return CONTRACT_TEXT_TEMPLATE
-    .replace("{{DATE_AUTOMATIQUE}}", `${d}/${m}/${y}`)
+  return CONTRACT_TEXT_TEMPLATE.replace("{{DATE_AUTOMATIQUE}}", `${d}/${m}/${y}`)
     .replace("{{ANNÉE_AUTOMATIQUE}}", `${y}`);
 };
 
@@ -210,7 +208,7 @@ Sa propriété demeure exclusivement celle de RHAZN.
 ══════════════════════════════════════
 Les analyses, décisions, rapports et traitements internes :
 • Restent confidentiels  
-• Peuvent être archivés pour raisons juridiques  
+• Peuvent être archivés pour raisons juridiiques  
 
 ══════════════════════════════════════
 🛠️ 15. MODIFICATION DES CONDITIONS
@@ -240,299 +238,251 @@ RHAZN® — Écosystème Officiel de Monétisation et d’Exclusivité du Mérit
 © RHAZN — Tous droits réservés — {{ANNÉE_AUTOMATIQUE}}
 `;
 
+/* ======================================================
+SCREEN
+====================================================== */
 export default function ContractScreen() {
   const router = useRouter();
-  const [checking, setChecking] = useState(true);
 
-  // ====== PROGRESS STATES ======
+  const [checking, setChecking] = useState(true);
+  const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [hasReachedEnd, setHasReachedEnd] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const scrollRef = useRef(null);
   const lastScrollTs = useRef(Date.now());
+  const lockRef = useRef(false);
 
-  // ====== ANDROID NAVBAR CONTROL ======
-  const [tapCount, setTapCount] = useState(0);
-
+  /* NAV */
   useEffect(() => {
-    NavigationBar.setVisibilityAsync("hidden");
-    NavigationBar.setBehaviorAsync("overlay-swipe");
+    NavigationBar.setVisibilityAsync("visible").catch(() => {});
   }, []);
 
-  const handleScreenTap = () => {
-    setTapCount((prev) => {
-      const newValue = prev + 1;
-      if (newValue >= 5) {
-        NavigationBar.setVisibilityAsync("visible");
-        return 0;
-      }
-      return newValue;
-    });
-  };
-
-  const hideNavOnScroll = () => {
-    NavigationBar.setVisibilityAsync("hidden");
-  };
-
-  // SESSION CHECK
+  /* ======================================================
+  SESSION
+  ====================================================== */
   useEffect(() => {
-    supabase.auth.getUser().then(({ data, error }) => {
-      if (error || !data.user) router.replace("/auth/login");
-      else setChecking(false);
-    });
-  }, []);
+  let mounted = true;
 
-  // HANDLE ACCEPT
+  const checkContract = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (!session) {
+      router.replace("/auth/login");
+      return;
+    }
+
+    const uid = session.user.id;
+    setSessionUserId(uid);
+
+    const { data } = await supabase
+      .from("profiles")
+      .select("contract_accepted_at")
+      .eq("id", uid)
+      .single();
+
+    if (!mounted) return;
+
+    if (data?.contract_accepted_at) {
+      // 🔥 IMPORTANT: push au lieu de replace
+      router.push("/legal/signature");
+      return;
+    }
+
+    setChecking(false);
+  };
+
+  checkContract();
+
+  return () => {
+    mounted = false;
+  };
+}, []);
+
+
+  /* ======================================================
+  SCROLL TRACK
+  ====================================================== */
+  const handleScroll = (e: any) => {
+    const now = Date.now();
+    if (now - lastScrollTs.current < 40) return;
+    lastScrollTs.current = now;
+
+    const { contentSize, layoutMeasurement, contentOffset } = e.nativeEvent;
+
+    const denom = contentSize.height - layoutMeasurement.height;
+    const raw = denom <= 0 ? 100 : (contentOffset.y / denom) * 100;
+
+    const percent = Math.min(100, Math.max(0, Math.round(raw)));
+
+    setProgress(percent);
+    if (percent >= 100) setHasReachedEnd(true);
+  };
+
+  /* ======================================================
+  ACCEPT
+  ====================================================== */
   const handleAccept = async () => {
-    const { data: session } = await supabase.auth.getUser();
-    if (!session?.user) return;
+  if (!sessionUserId || lockRef.current) return;
 
-    await supabase
-      .from("users")
-      .update({ contract_accepted: true })
-      .eq("uid", session.user.id);
+  setErrorMsg(null);
+  lockRef.current = true;
 
-    router.replace("/legal/signature");
-  };
+  try {
+    const { error } = await supabase.rpc("rz_accept_contract", {
+      p_user_id: sessionUserId,
+    });
 
+    if (error) {
+      const fallback = await supabase
+        .from("profiles")
+        .update({ contract_accepted_at: new Date().toISOString() })
+        .eq("id", sessionUserId);
+
+      if (fallback.error) {
+        setErrorMsg("Erreur réseau. Réessayez.");
+        lockRef.current = false;
+        return;
+      }
+    }
+
+    await Haptics.notificationAsync(
+      Haptics.NotificationFeedbackType.Success
+    ).catch(() => {});
+
+    // 🔥 IMPORTANT
+    await supabase.auth.refreshSession();
+
+    router.replace("/(tabs)");
+  } catch {
+    setErrorMsg("Erreur inattendue. Réessayez.");
+    lockRef.current = false;
+  }
+};
+
+  /* ======================================================
+  DECLINE
+  ====================================================== */
   const handleDecline = async () => {
-    await supabase.auth.signOut();
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+    await supabase.auth.signOut().catch(() => {});
     router.replace("/auth/login");
   };
 
-  // SCROLL PROGRESS
-  const handleScroll = (e) => {
-    hideNavOnScroll();
-
-    const now = Date.now();
-    if (now - lastScrollTs.current < 80) return;
-    lastScrollTs.current = now;
-
-    const { contentSize, layoutMeasurement, contentOffset } =
-      e.nativeEvent;
-
-    const percent = Math.min(
-      100,
-      Math.round((contentOffset.y / (contentSize.height - layoutMeasurement.height)) * 100)
-    );
-
-    setProgress(percent);
-
-    if (percent >= 100 && !hasReachedEnd) {
-      setHasReachedEnd(true);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
-  };
-
+  /* ======================================================
+  LOADING
+  ====================================================== */
   if (checking) {
     return (
-      <View style={styles.loadingScreen}>
+      <View style={styles.loading}>
         <LoaderRhazn />
       </View>
     );
   }
 
+  /* ======================================================
+  UI
+  ====================================================== */
   return (
-    <TouchableWithoutFeedback onPress={handleScreenTap}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.full}
-      >
-        <View style={styles.logoWrapper}>
-          <Image
-            source={require("../../assets/images/rhazn-logo.png")}
-            style={styles.logo}
-          />
-        </View>
+    <KeyboardAvoidingView style={styles.full}>
+      <View style={styles.logoWrap}>
+        <Image source={require("../../assets/images/rhazn-logo.png")} style={styles.logo} />
+      </View>
 
-        <View style={[styles.progressBar, { height: `${progress}%` }]} />
+      <View style={[styles.progressBar, { height: `${progress}%` }]} />
 
-        <View style={styles.main}>
-          <Text style={styles.heading}>Conditions d’intégration</Text>
-          <Text style={styles.subheading}>
-            Faites défiler pour lire le contrat ({progress}%)
-          </Text>
+      <View style={styles.main}>
+        <Text style={styles.title}>Conditions d’intégration</Text>
 
-          <View style={styles.card}>
-            <ScrollView
-              ref={scrollRef}
-              style={styles.scroll}
-              contentContainerStyle={styles.scrollContent}
-              onScroll={handleScroll}
-              scrollEventThrottle={16}
-              showsVerticalScrollIndicator={false}
-            >
-              <Text style={styles.contractText}>{generateContractText()}</Text>
-
-              {hasReachedEnd && (
-                <Text style={styles.endMessage}>
-                  🎉 Vous avez lu tout le contrat. Merci de votre engagement envers RHAZN.
-                </Text>
-              )}
-
-              <TouchableOpacity
-                style={[
-                  styles.acceptButton,
-                  { opacity: hasReachedEnd ? 1 : 0.3 },
-                ]}
-                disabled={!hasReachedEnd}
-                onPress={handleAccept}
-                activeOpacity={0.9}
-              >
-                <Text style={styles.acceptText}>Accepter & continuer</Text>
-              </TouchableOpacity>
-
-              <View style={{ height: 100 }} />
-            </ScrollView>
-
-            <View style={styles.gradientOverlay} pointerEvents="none" />
-          </View>
-        </View>
-
-        <View style={styles.actionsWrapper}>
-          <TouchableOpacity
-            style={styles.declineButton}
-            activeOpacity={0.85}
-            onPress={handleDecline}
+        <View style={styles.card}>
+          <ScrollView
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            showsVerticalScrollIndicator={false}
           >
-            <Text style={styles.declineText}>Refuser & quitter</Text>
-          </TouchableOpacity>
+            <Text style={styles.contractText}>{generateContractText()}</Text>
+
+            {/* ✅ BOUTONS À LA FIN */}
+            <TouchableOpacity
+              disabled={!hasReachedEnd}
+              onPress={handleAccept}
+              style={[styles.acceptBtn, { opacity: hasReachedEnd ? 1 : 0.35 }]}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.acceptText}>Continuer vers la signature</Text>
+            </TouchableOpacity>
+
+            {/* 3 ESPACES VISUELS */}
+            <View style={{ height: 60 }} />
+
+            <TouchableOpacity onPress={handleDecline} activeOpacity={0.9}>
+              <Text style={styles.decline}>Refuser & quitter</Text>
+            </TouchableOpacity>
+
+            <View style={{ height: 60 }} />
+          </ScrollView>
         </View>
-      </KeyboardAvoidingView>
-    </TouchableWithoutFeedback>
+
+        {errorMsg && <Text style={styles.errorText}>{errorMsg}</Text>}
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
-// ============================================================================
-// STYLES — VERSION PREMIUM RHAZN
-// ============================================================================
+/* ====================================================== */
 const styles = StyleSheet.create({
   full: { flex: 1, backgroundColor: COLORS.black },
+  loading: { flex: 1, justifyContent: "center", alignItems: "center" },
 
-  loadingScreen: {
-    flex: 1,
-    backgroundColor: COLORS.black,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  logoWrapper: {
-    position: "absolute",
-    top: 42,
-    right: 26,
-    zIndex: 50,
-  },
-  logo: { width: 46, height: 46, resizeMode: "contain", opacity: 0.95 },
+  logoWrap: { position: "absolute", top: 42, right: 26 },
+  logo: { width: 46, height: 46 },
 
   progressBar: {
     position: "absolute",
-    top: 0,
     right: 0,
+    top: 0,
     width: 4,
     backgroundColor: COLORS.gold,
-    zIndex: 40,
-    borderBottomLeftRadius: 4,
-    borderTopLeftRadius: 4,
   },
 
-  main: {
-    flex: 1,
-    paddingTop: 96,
-    paddingHorizontal: 22,
-  },
+  main: { flex: 1, paddingTop: 96, paddingHorizontal: 22 },
 
-  heading: {
-    color: COLORS.white,
-    fontSize: 26,
-    fontWeight: "800",
-  },
-  subheading: {
-    color: COLORS.gray,
-    fontSize: 13,
-    marginBottom: 18,
-  },
+  title: { color: COLORS.white, fontSize: 26, fontWeight: "800" },
 
-  // ⭐ CARTE RÉDUITE POUR LIBÉRER LE BOUTON REFUSER
   card: {
-    flex: 0.86, // ← Ajustement premium : la carte ne touche plus le bouton
+    flex: 1,
     backgroundColor: COLORS.card,
     borderRadius: 24,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    padding: 14,
-    overflow: "hidden",
+    padding: 16,
+    marginTop: 12,
   },
 
-  scroll: { flex: 1 },
-  scrollContent: { paddingTop: 8, paddingBottom: 40 },
+  contractText: { color: COLORS.white, fontSize: 13, lineHeight: 18 },
 
-  contractText: {
-    color: COLORS.white,
-    fontSize: 13,
-    lineHeight: 20,
-  },
-
-  endMessage: {
-    color: COLORS.green,
-    fontSize: 13,
-    marginTop: 20,
-    marginBottom: 10,
-    fontWeight: "600",
-  },
-
-  gradientOverlay: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 38,
-    backgroundColor: "rgba(0,0,0,0.55)",
-  },
-
-  actionsWrapper: {
-    width: "100%",
-    paddingHorizontal: 22,
-    paddingBottom: 20,
-    paddingTop: 4,
-    backgroundColor: "transparent",
-  },
-
-  declineButton: {
-    position: "absolute",
-    bottom: 32, // ← BOUTON REMONTÉ
-    left: 22,
-    right: 22,
-    borderRadius: 999,
-    paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: COLORS.red,
-    backgroundColor: "rgba(0,0,0,0.85)",
-    alignItems: "center",
-    zIndex: 200,
-  },
-
-  declineText: {
-    color: COLORS.red,
-    fontWeight: "600",
-    fontSize: 15,
-  },
-
-  acceptButton: {
-    width: "100%",
-    borderRadius: 999,
-    paddingVertical: 15,
+  acceptBtn: {
+    marginTop: 28,
     backgroundColor: COLORS.gold,
+    paddingVertical: 16,
+    borderRadius: 999,
     alignItems: "center",
-    marginTop: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    elevation: 6,
   },
 
-  acceptText: {
-    color: COLORS.black,
+  acceptText: { color: "#000", fontWeight: "900" },
+
+  decline: {
+    color: COLORS.red,
+    textAlign: "center",
+    fontSize: 14,
     fontWeight: "700",
-    fontSize: 15,
+  },
+
+  errorText: {
+    color: COLORS.red,
+    textAlign: "center",
+    marginTop: 10,
+    fontWeight: "700",
   },
 });
+
+
+

@@ -18,19 +18,17 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 
 import { useUser } from "../context/UserContext";
 import { supabase } from "../lib/supabase";
 import { uploadFluxVideo } from "./services/videoStorageService";
 
-
-/* SYSTÈME RHAZN */
+/* ===================== SYSTÈME RHAZN ===================== */
 const TAN_COST = 125;
 
-
-/* UTIL — Semaine ISO */
+/* ===================== UTIL — Semaine ISO ===================== */
 function isoWeek(date: Date) {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const day = d.getUTCDay() || 7;
@@ -39,9 +37,8 @@ function isoWeek(date: Date) {
   return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
 }
 
-
-/* Vidéo CODÉE (inchangé) */
-const codeVideos = {
+/* ===================== Vidéos codées (inchangé) ===================== */
+const codeVideos: Record<number, string> = {
   1: "https://storage.rhazn.app/codes/1.mp4",
   2: "https://storage.rhazn.app/codes/2.mp4",
   3: "https://storage.rhazn.app/codes/3.mp4",
@@ -49,34 +46,29 @@ const codeVideos = {
   5: "https://storage.rhazn.app/codes/5.mp4",
 };
 
-
 export default function UploadSuspentz() {
   const router = useRouter();
   const { user, refreshUser } = useUser();
 
   const [video, setVideo] = useState<string | null>(null);
-  const [title, setTitle] = useState<string>("");
-  const [progress, setProgress] = useState<number>(0);
-  const [uploading, setUploading] = useState<boolean>(false);
-  const [rzMsg, setRzMsg] = useState<string>("");
-  const [rzVisible, setRzVisible] = useState<boolean>(false);
-  const [rulesVisible, setRulesVisible] = useState<boolean>(false);
+  const [title, setTitle] = useState("");
+  const [progress] = useState(0); // conservé pour UI (uploadFluxVideo n’expose pas encore le progrès)
+  const [uploading, setUploading] = useState(false);
+  const [rzMsg, setRzMsg] = useState("");
+  const [rzVisible, setRzVisible] = useState(false);
 
   const activeCode = ((isoWeek(new Date()) - 1) % 50) + 1;
 
-
-  /* PROTECTION — TAN minimum */
+  /* ===================== PROTECTION — TAN minimum ===================== */
   useEffect(() => {
     if (!user) return;
-
     if (user.tan < 1) {
       showRZ("Solde insuffisant : 1 TAN minimum requis.");
       setTimeout(() => router.replace("/agent-buy-acset"), 1200);
     }
   }, [user]);
 
-
-  /* SWIPE */
+  /* ===================== SWIPE BACK ===================== */
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) =>
@@ -87,52 +79,85 @@ export default function UploadSuspentz() {
     })
   ).current;
 
-
-  /* Alert RHAZN */
+  /* ===================== ALERT RHAZN ===================== */
   const rzOpacity = useRef(new Animated.Value(0)).current;
   const rzY = useRef(new Animated.Value(20)).current;
 
   function showRZ(msg: string) {
     setRzMsg(msg);
     setRzVisible(true);
+
     Animated.parallel([
-      Animated.timing(rzOpacity, { toValue: 1, duration: 260, useNativeDriver: true }),
-      Animated.timing(rzY, { toValue: 0, duration: 260, useNativeDriver: true }),
+      Animated.timing(rzOpacity, {
+        toValue: 1,
+        duration: 260,
+        useNativeDriver: true,
+      }),
+      Animated.timing(rzY, {
+        toValue: 0,
+        duration: 260,
+        useNativeDriver: true,
+      }),
     ]).start();
 
     setTimeout(() => {
       Animated.parallel([
-        Animated.timing(rzOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
-        Animated.timing(rzY, { toValue: 20, duration: 200, useNativeDriver: true }),
+        Animated.timing(rzOpacity, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(rzY, {
+          toValue: 20,
+          duration: 200,
+          useNativeDriver: true,
+        }),
       ]).start(() => setRzVisible(false));
     }, 3000);
   }
 
-
-  /* Keyboard animation */
+  /* ===================== KEYBOARD ANIMATION ===================== */
   const inputY = useRef(new Animated.Value(0)).current;
   const inputScale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     const show = Keyboard.addListener("keyboardDidShow", () => {
       Animated.parallel([
-        Animated.timing(inputY, { toValue: -165, duration: 340, useNativeDriver: true }),
-        Animated.timing(inputScale, { toValue: 1.04, duration: 340, useNativeDriver: true }),
+        Animated.timing(inputY, {
+          toValue: -165,
+          duration: 340,
+          useNativeDriver: true,
+        }),
+        Animated.timing(inputScale, {
+          toValue: 1.04,
+          duration: 340,
+          useNativeDriver: true,
+        }),
       ]).start();
     });
 
     const hide = Keyboard.addListener("keyboardDidHide", () => {
       Animated.parallel([
-        Animated.timing(inputY, { toValue: 0, duration: 300, useNativeDriver: true }),
-        Animated.timing(inputScale, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.timing(inputY, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(inputScale, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
       ]).start();
     });
 
-    return () => { show.remove(); hide.remove(); };
+    return () => {
+      show.remove();
+      hide.remove();
+    };
   }, []);
 
-
-  /* Pick video */
+  /* ===================== PICK VIDEO ===================== */
   async function pickVideo() {
     const r = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Videos,
@@ -141,23 +166,26 @@ export default function UploadSuspentz() {
     if (!r.canceled) setVideo(r.assets[0].uri);
   }
 
-
-  /* SUBMIT — VERSION PRO */
+  /* ===================== SUBMIT — VERSION STABLE ===================== */
   async function submit() {
     if (!user) return;
     if (!title.trim()) return showRZ("Un titre est requis.");
     if (!video) return showRZ("Sélectionnez une vidéo.");
 
-    if (user.tan < TAN_COST)
+    if (user.tan < TAN_COST) {
       return showRZ(`Solde insuffisant : ${TAN_COST} TAN requis.`);
+    }
 
     setUploading(true);
 
     try {
-      // Upload video
-      const uploadUrl = await uploadFluxVideo(video, setProgress, title, activeCode);
+      // 📁 Path Supabase (logique RHAZN)
+      const destinationPath = `suspentz/${user.uid}/${Date.now()}-${activeCode}.mp4`;
 
-      // Déduction TAN
+      // 🎥 Upload vidéo (retourne le PATH, pas une URL)
+      const storedPath = await uploadFluxVideo(video, destinationPath);
+
+      // 💰 Déduction TAN
       const { error: errTan } = await supabase
         .from("users")
         .update({ tan: user.tan - TAN_COST })
@@ -165,10 +193,10 @@ export default function UploadSuspentz() {
 
       if (errTan) throw errTan;
 
-      // Enregistrement
+      // 📝 Enregistrement SUSPENTZ
       const { error: errInsert } = await supabase.from("suspentz").insert({
         title,
-        video_url: uploadUrl,
+        video_path: storedPath,
         author_uid: user.uid,
         author_email: user.email,
         duration_seconds: 0,
@@ -183,36 +211,39 @@ export default function UploadSuspentz() {
 
       setVideo(null);
       setTitle("");
-      setProgress(0);
-
       refreshUser();
 
       setTimeout(() => router.push("/rz-user-dashboard"), 1200);
-
     } catch (err: any) {
       console.log("UPLOAD ERROR:", err);
       showRZ(err?.message || "Erreur inconnue.");
+    } finally {
+      setUploading(false);
     }
-
-    setUploading(false);
   }
-
 
   return (
     <View style={{ flex: 1 }} {...panResponder.panHandlers}>
       <View style={styles.container}>
-
         {/* Logo */}
-        <TouchableOpacity style={styles.header} onPress={() => router.push("/rz-user-dashboard")}>
-          <Image source={require("../assets/images/rhazn-logo.png")} style={styles.logo} />
+        <TouchableOpacity
+          style={styles.header}
+          onPress={() => router.push("/rz-user-dashboard")}
+        >
+          <Image
+            source={require("../assets/images/rhazn-logo.png")}
+            style={styles.logo}
+          />
         </TouchableOpacity>
 
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={{ flex: 1 }}
         >
-          <ScrollView contentContainerStyle={{ paddingTop: 120 }} keyboardShouldPersistTaps="handled">
-
+          <ScrollView
+            contentContainerStyle={{ paddingTop: 120 }}
+            keyboardShouldPersistTaps="handled"
+          >
             <Text style={styles.codeTitle}>Publier un SUSPENTZ</Text>
 
             {/* Code Hebdo */}
@@ -221,16 +252,28 @@ export default function UploadSuspentz() {
               onPress={() =>
                 router.push({
                   pathname: "/codeVideo",
-                  params: { code: activeCode, video: codeVideos[activeCode] }
+                  params: {
+                    code: activeCode,
+                    video: codeVideos[activeCode],
+                  },
                 })
               }
             >
-              <Text style={styles.activeCardTitle}>CODE-{activeCode} Hebdo</Text>
+              <Text style={styles.activeCardTitle}>
+                CODE-{activeCode} Hebdo
+              </Text>
             </TouchableOpacity>
 
             {/* Panel */}
             <View style={styles.panel}>
-              <Animated.View style={{ transform: [{ translateY: inputY }, { scale: inputScale }] }}>
+              <Animated.View
+                style={{
+                  transform: [
+                    { translateY: inputY },
+                    { scale: inputScale },
+                  ],
+                }}
+              >
                 <View style={styles.searchBar}>
                   <Ionicons name="film-outline" size={18} color="#777" />
                   <TextInput
@@ -248,7 +291,10 @@ export default function UploadSuspentz() {
                 <Text style={styles.selectText}>Sélectionner une vidéo</Text>
               </TouchableOpacity>
 
-              {video && <Text style={styles.fileName}>Vidéo sélectionnée</Text>}
+              {video && (
+                <Text style={styles.fileName}>Vidéo sélectionnée</Text>
+              )}
+
               {uploading && (
                 <>
                   <ActivityIndicator size="large" color="#FFD700" />
@@ -256,14 +302,16 @@ export default function UploadSuspentz() {
                 </>
               )}
 
-              <TouchableOpacity style={styles.publishBtn} onPress={submit}>
+              <TouchableOpacity
+                style={styles.publishBtn}
+                onPress={submit}
+                disabled={uploading}
+              >
                 <Text style={styles.publishText}>Publier le SUSPENTZ</Text>
               </TouchableOpacity>
-
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
-
 
         {/* ALERT RHAZN */}
         {rzVisible && (
@@ -275,7 +323,7 @@ export default function UploadSuspentz() {
               right: 16,
               opacity: rzOpacity,
               transform: [{ translateY: rzY }],
-              zIndex: 1000
+              zIndex: 1000,
             }}
           >
             <View style={styles.alertBox}>
@@ -283,29 +331,43 @@ export default function UploadSuspentz() {
             </View>
           </Animated.View>
         )}
-
       </View>
     </View>
   );
-};
+}
 
-
-/* STYLES */
+/* ===================== STYLES ===================== */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
   header: { position: "absolute", top: 42, right: 20, zIndex: 50 },
   logo: { width: 50, height: 50, resizeMode: "contain" },
 
-  codeTitle: { textAlign: "center", fontSize: 22, fontWeight: "800", color: "#FFD700", marginBottom: 16 },
+  codeTitle: {
+    textAlign: "center",
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#FFD700",
+    marginBottom: 16,
+  },
 
   activeCard: {
-    width: 220, height: 60,
+    width: 220,
+    height: 60,
     backgroundColor: "#0b0b0b",
-    borderRadius: 18, borderWidth: 1, borderColor: "#1f3b1f",
-    alignSelf: "center", marginTop: 18, marginBottom: 10,
-    justifyContent: "center", alignItems: "center"
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#1f3b1f",
+    alignSelf: "center",
+    marginTop: 18,
+    marginBottom: 10,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  activeCardTitle: { color: "#4ade80", fontSize: 20, fontWeight: "800" },
+  activeCardTitle: {
+    color: "#4ade80",
+    fontSize: 20,
+    fontWeight: "800",
+  },
 
   panel: {
     backgroundColor: "#0d0d0d",
@@ -314,44 +376,74 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 22,
     borderWidth: 1,
     borderColor: "#222",
-    marginTop: 40
+    marginTop: 40,
   },
 
   searchBar: {
     backgroundColor: "#111",
-    borderWidth: 1, borderColor: "#222",
+    borderWidth: 1,
+    borderColor: "#222",
     borderRadius: 12,
     padding: 12,
     flexDirection: "row",
     gap: 8,
     marginBottom: 26,
   },
-  searchInput: { flex: 1, color: "#fff", fontSize: 15, textAlign: "center" },
+  searchInput: {
+    flex: 1,
+    color: "#fff",
+    fontSize: 15,
+    textAlign: "center",
+  },
 
   selectBtn: {
-    backgroundColor: "#111", padding: 12,
-    borderRadius: 10, borderWidth: 1, borderColor: "#333",
-    flexDirection: "row", justifyContent: "center", alignItems: "center",
-    marginBottom: 12
+    backgroundColor: "#111",
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#333",
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 12,
   },
   selectText: { marginLeft: 8, color: "#FFD700", fontSize: 16 },
 
   fileName: { color: "#4ade80", textAlign: "center" },
-  progress: { color: "#FFD700", textAlign: "center", marginTop: 6 },
+  progress: {
+    color: "#FFD700",
+    textAlign: "center",
+    marginTop: 6,
+  },
 
-  publishBtn: { backgroundColor: "#FFD700", paddingVertical: 14, borderRadius: 10 },
-  publishText: { textAlign: "center", color: "#000", fontWeight: "800", fontSize: 16 },
+  publishBtn: {
+    backgroundColor: "#FFD700",
+    paddingVertical: 14,
+    borderRadius: 10,
+  },
+  publishText: {
+    textAlign: "center",
+    color: "#000",
+    fontWeight: "800",
+    fontSize: 16,
+  },
 
   alertBox: {
     backgroundColor: "#0b0b0b",
-    borderWidth: 1, borderColor: "#FFD70020",
+    borderWidth: 1,
+    borderColor: "#FFD70020",
     borderRadius: 18,
     padding: 18,
     shadowColor: "#FFD700",
     shadowOpacity: 0.25,
     shadowRadius: 14,
-    shadowOffset: { height: 4, width: 0 }
+    shadowOffset: { height: 4, width: 0 },
   },
-  alertText: { color: "#FFD700", fontSize: 17, fontWeight: "700", textAlign: "center" },
-
+  alertText: {
+    color: "#FFD700",
+    fontSize: 17,
+    fontWeight: "700",
+    textAlign: "center",
+  },
 });
+

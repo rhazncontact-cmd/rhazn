@@ -1,82 +1,113 @@
 import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { ActivityIndicator, View } from "react-native";
 import { supabase } from "../../lib/supabase";
 
-const GOLD = "#D4AF37";
+/**
+🛡️ RHAZN ADMIN GUARD — ULTRA LOCK FINAL
+✔ SUPREME accès direct
+✔ CAD accès
+✔ CADNA accès
+✔ Pas de boucle
+✔ Pas de blocage fantôme
+✔ Sécurité fintech stable
+*/
 
-export default function AdminGuard({ children }: { children: React.ReactNode }) {
+const SUPREME_EMAIL = "meyounbauniklovegodstory@gmail.com";
+
+type Status = "loading" | "ok" | "deny";
+
+export default function AdminGuard({ children }: { children: any }) {
   const router = useRouter();
-  const [allowed, setAllowed] = useState<null | boolean>(null);
+  const [status, setStatus] = useState<Status>("loading");
+  const mounted = useRef(true);
 
   useEffect(() => {
-    const check = async () => {
-      // 1️⃣ Session
-      const { data: sessionData } = await supabase.auth.getSession();
-      const uid = sessionData?.session?.user?.id;
+    mounted.current = true;
 
-      if (!uid) {
-        router.replace("/auth/login");
-        return;
+    const checkAccess = async () => {
+      try {
+        const { data: auth } = await supabase.auth.getUser();
+        const user = auth?.user;
+
+        if (!mounted.current) return;
+
+        // ❌ pas connecté
+        if (!user) {
+          setStatus("deny");
+          return;
+        }
+
+        const email = (user.email || "").toLowerCase();
+
+        // 👑 SUPREME accès absolu
+        if (email === SUPREME_EMAIL) {
+          setStatus("ok");
+          return;
+        }
+
+        // 🔎 lire role réel
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", user.id)
+          .single();
+
+        if (!mounted.current) return;
+
+        const role = (profile?.role || "").toUpperCase();
+
+        // 🔥 AUTORISATIONS RHAZN
+        if (
+          role === "SUPREME" ||
+          role === "CAD" ||
+          role === "CADNA"
+        ) {
+          setStatus("ok");
+          return;
+        }
+
+        // ❌ refus
+        setStatus("deny");
+      } catch (e) {
+        console.log("AdminGuard error:", e);
+        setStatus("deny");
       }
-
-      // 2️⃣ Chargement user
-      const { data, error } = await supabase
-        .from("users")
-        .select("role")
-        .eq("uid", uid)
-        .maybeSingle();
-
-      if (error || !data || data.role !== "admin") {
-        // 🔥 Log DENIED
-        await supabase.from("admin_access_logs").insert({
-          user_uid: uid,
-          event_type: "denied",
-          success: false,
-          reason: error
-            ? `db_error: ${error.message}`
-            : `role=${data?.role ?? "unknown"}`,
-        });
-
-        router.replace("/not-authorized");
-        return;
-      }
-
-      // 3️⃣ Log GRANTED + mise à jour last_admin_access
-      await Promise.all([
-        supabase.from("admin_access_logs").insert({
-          user_uid: uid,
-          event_type: "granted",
-          success: true,
-          reason: "AdminGuard passed",
-        }),
-        supabase
-          .from("users")
-          .update({ last_admin_access: new Date().toISOString() })
-          .eq("uid", uid),
-      ]);
-
-      setAllowed(true);
     };
 
-    check();
+    checkAccess();
+
+    return () => {
+      mounted.current = false;
+    };
   }, []);
 
-  if (allowed === null) {
+  /* 🔁 redirection si refus */
+  useEffect(() => {
+    if (status === "deny") {
+      router.replace("/admin-roles");
+    }
+  }, [status]);
+
+  /* ⏳ loading */
+  if (status === "loading") {
     return (
       <View
         style={{
           flex: 1,
-          backgroundColor: "#000",
           justifyContent: "center",
           alignItems: "center",
+          backgroundColor: "#000",
         }}
       >
-        <ActivityIndicator color={GOLD} />
-        <Text style={{ color: GOLD, marginTop: 10 }}>Vérification du mérité...</Text>
+        <ActivityIndicator color="#D4AF37" />
       </View>
     );
   }
 
+  /* ❌ refus */
+  if (status !== "ok") return null;
+
+  /* ✅ accès */
   return <>{children}</>;
 }

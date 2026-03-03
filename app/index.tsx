@@ -1,45 +1,14 @@
-import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
-import { ActivityIndicator, View } from "react-native";
+// ======================================================
+// RHAZN — ROOT ENTRY (FINAL FINTECH ARCHITECTURE)
+// ======================================================
 
-export default function AppIndex() {
-  const router = useRouter();
-  const [navReady, setNavReady] = useState(false);
+import AuthGate from "./AuthGate";
+import { AuthProvider } from "./AuthProvider";
 
-  useEffect(() => {
-    // ✔ Router EXPO prêt quand on peut tester une navigation
-    const timerReady = setTimeout(() => {
-      setNavReady(true);
-    }, 120);
-
-    return () => clearTimeout(timerReady);
-  }, []);
-
-  useEffect(() => {
-    if (!navReady) return;
-
-    const timer = setTimeout(() => {
-      try {
-        router.replace("/splash");
-      } catch (e) {
-        console.warn("Navigation error (index):", e);
-      }
-    }, 80);
-
-    return () => clearTimeout(timer);
-  }, [navReady]);
-
+export default function Index() {
   return (
-    <View
-      style={{
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
-        backgroundColor: "black",
-      }}
-    >
-      <ActivityIndicator size="large" color="#FFD700" />
-    </View>
+    <AuthProvider>
+      <AuthGate />
+    </AuthProvider>
   );
 }
-

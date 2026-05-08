@@ -1,10 +1,24 @@
 # =========================
+# 🚨 Heavy files (CRITICAL)
+# =========================
+*.mp4
+*.mp3
+*.zip
+uploads/
+
+# =========================
 # Dependencies
 # =========================
 node_modules/
 
 # =========================
-# Expo
+# Environment variables
+# =========================
+.env
+.env*.local
+
+# =========================
+# Expo / React Native
 # =========================
 .expo/
 dist/
@@ -12,10 +26,15 @@ web-build/
 expo-env.d.ts
 
 # =========================
+# Native folders (if not needed)
+# =========================
+/ios
+/android
+
+# =========================
 # Native security files
 # =========================
 .kotlin/
-*.orig.*
 *.jks
 *.p8
 *.p12
@@ -23,12 +42,12 @@ expo-env.d.ts
 *.mobileprovision
 
 # =========================
-# Metro / Debug
+# Logs & debug
 # =========================
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 .metro-health-check*
-npm-debug.*
-yarn-debug.*
-yarn-error.*
 
 # =========================
 # macOS
@@ -37,29 +56,12 @@ yarn-error.*
 *.pem
 
 # =========================
-# Local env files
-# =========================
-.env
-.env*.local
-
-# =========================
 # TypeScript
 # =========================
 *.tsbuildinfo
 
 # =========================
-# Exemple
+# Misc
 # =========================
+*.orig.*
 app-example
-
-# =========================
-# Native folders
-# =========================
-/ios
-
-# =========================
-# 🚨 IMPORTANT (heavy files)
-# =========================
-*.mp4
-*.mp3
-uploads

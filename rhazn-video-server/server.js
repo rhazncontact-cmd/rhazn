@@ -1,136 +1,82 @@
-// server.js — RHAZN Video Server v6.0 🚀 HARD AUDIO REPLACEMENT
-
-require("dotenv").config();
+// server.js — RHAZN Video Server ✅ PRODUCTION READY
 
 const express = require("express");
 const multer = require("multer");
-const cors = require("cors");
-const fs = require("fs");
+const { exec } = require("child_process");
 const path = require("path");
-const ffmpeg = require("fluent-ffmpeg");
-const ffmpegPath = require("ffmpeg-static");
-
-ffmpeg.setFfmpegPath(ffmpegPath);
+const fs = require("fs");
+const cors = require("cors");
 
 const app = express();
-
-// ✅ CONFIG
 app.use(cors());
 app.use(express.json());
-process.stdin.resume();
 
-// ✅ DOSSIERS
+// ✅ dossiers
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 const OUTPUT_DIR = path.join(__dirname, "outputs");
 
+// ✅ créer dossiers si pas existants
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
 
-// ✅ MULTER
-const upload = multer({
-  dest: UPLOAD_DIR,
-  limits: { fileSize: 200 * 1024 * 1024 }
-});
+// ✅ config multer
+const upload = multer({ dest: UPLOAD_DIR });
 
-// ✅ HEALTH
+// ✅ route test
 app.get("/", (req, res) => {
-  res.send("✅ RHAZN VIDEO SERVER RUNNING");
+  res.send("✅ RHAZN server running");
 });
 
-// ✅ RENDER
-app.post("/render", upload.fields([
-  { name: "video", maxCount: 1 },
-  { name: "audio", maxCount: 1 }
-]), (req, res) => {
+// ✅ route principale
+app.post("/create-video", upload.single("video"), (req, res) => {
   try {
-    console.log("FILES:", req.files);
-
-    if (!req.files?.video || !req.files?.audio) {
-      return res.status(400).send("Video + audio requis");
+    if (!req.file) {
+      return res.status(400).send("No video uploaded");
     }
 
-    const videoFile = req.files.video[0].path;
-    const audioFile = req.files.audio[0].path;
+    const videoPath = req.file.path;
+    const audioPath = path.join(__dirname, "audio.mp3");
 
-    const outputFile = path.join(
-      OUTPUT_DIR,
-      `final_${Date.now()}.mp4`
-    );
+    if (!fs.existsSync(audioPath)) {
+      return res.status(400).send("audio.mp3 not found");
+    }
 
-    console.log("📥 VIDEO:", videoFile);
-    console.log("🎵 AUDIO:", audioFile);
-    console.log("📤 OUTPUT:", outputFile);
+    const outputFile = `output-${Date.now()}.mp4`;
+    const outputPath = path.join(OUTPUT_DIR, outputFile);
 
-    ffmpeg()
-      .input(videoFile)
-      .input(audioFile)
+    const cmd = `
+      ffmpeg -y -i "${videoPath}" -i "${audioPath}"
+      -map 0:v:0 -map 1:a:0
+      -c:v copy -c:a aac -shortest
+      "${outputPath}"
+    `;
 
-      // ✅ 💣 SUPPRESSION TOTALE AUDIO ORIGINAL + INJECTION NOUVEL AUDIO
-      .outputOptions([
-        "-map 0:v:0",
-        "-map -0:a",
-        "-map 1:a:0",
-        "-c:v copy",
-        "-c:a aac",
-        "-b:a 192k",
-        "-shortest",
-        "-movflags +faststart"
-      ])
+    exec(cmd, (err) => {
+      // supprimer fichier temporaire
+      fs.unlink(videoPath, () => {});
 
-      .on("start", (cmd) => {
-        console.log("\n⚙️ FFMPEG CMD:\n", cmd, "\n");
-      })
+      if (err) {
+        console.error("FFmpeg error:", err);
+        return res.status(500).send("ffmpeg error");
+      }
 
-      .on("progress", (p) => {
-        if (p.percent) {
-          console.log(`⏳ ${p.percent.toFixed(2)}%`);
-        }
-      })
-
-      .on("error", (err) => {
-        console.error("❌ FFMPEG ERROR:", err.message);
-        cleanup(videoFile, audioFile, outputFile);
-        return res.status(500).send("Erreur FFmpeg");
-      })
-
-      .on("end", () => {
-        console.log("✅ VIDEO READY");
-
-        res.download(outputFile, "final_video.mp4", (err) => {
-          if (err) console.error("DOWNLOAD ERROR:", err);
-          cleanup(videoFile, audioFile, outputFile);
-        });
-      })
-
-      .save(outputFile);
-
-  } catch (err) {
-    console.error("❌ SERVER ERROR:", err);
-    res.status(500).send("Erreur serveur");
+      res.json({
+        success: true,
+        url: `/outputs/${outputFile}` // ✅ FIX PRODUCTION
+      });
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).send("server error");
   }
 });
 
-// ✅ CLEANUP
-function cleanup(video, audio, output) {
-  [video, audio, output].forEach((file) => {
-    if (file && fs.existsSync(file)) {
-      fs.unlink(file, () => {});
-    }
-  });
-}
+// ✅ servir fichiers
+app.use("/outputs", express.static(OUTPUT_DIR));
 
-// ✅ ERRORS
-process.on("uncaughtException", (err) => {
-  console.error("💥 UNCAUGHT:", err);
-});
+// ✅ PORT RAILWAY (IMPORTANT)
+const PORT = process.env.PORT || 3000;
 
-process.on("unhandledRejection", (err) => {
-  console.error("💥 UNHANDLED:", err);
-});
-
-// ✅ START
-const PORT = process.env.PORT || 3001;
-
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log("🚀 Server running on port " + PORT);
 });

@@ -1,5 +1,3 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
-
 # =========================
 # Dependencies
 # =========================
@@ -41,6 +39,7 @@ yarn-error.*
 # =========================
 # Local env files
 # =========================
+.env
 .env*.local
 
 # =========================
@@ -56,5 +55,11 @@ app-example
 # =========================
 # Native folders
 # =========================
-/ios          # ✅ iOS reste ignoré
-# /android    ❌ SUPPRIMÉ POUR PERMETTRE LE TRACKING ANDROID
+/ios
+
+# =========================
+# 🚨 IMPORTANT (heavy files)
+# =========================
+*.mp4
+*.mp3
+uploads

@@ -1,0 +1,48 @@
+# Node / Package managers
+node_modules
+npm-debug.log*
+yarn-error.log*
+pnpm-lock.yaml
+
+# Git
+.git
+.gitignore
+
+# Local builds
+dist
+build
+web-build
+
+# Expo
+.expo
+.expo-shared
+
+# Environments
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Ignore heavy unnecessary media
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.wav
+*.zip
+*.rar
+*.psd
+*.ai
+*.xcf
+
+# iOS / Xcode
+Pods
+*.xcworkspace
+*.xcuserdata
+
+# Editors
+.vscode
+.idea
+
+# Logs
+*.log

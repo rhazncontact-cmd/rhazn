@@ -1,0 +1,85 @@
+{
+  "cli": {
+    "version": ">= 10.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "ios": {
+        "buildConfiguration": "Debug"
+      },
+      "env": {
+        "EXPO_USE_METRO_WORKER_POOL": "1",
+        "EXPO_PUBLIC_ENV": "development",
+        "EXPO_PUBLIC_API_URL": "https://rhazn-video-production.up.railway.app"
+      }
+    },
+
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_ENV": "preview",
+        "EXPO_PUBLIC_API_URL": "https://rhazn-video-production.up.railway.app",
+        "EXPO_USE_METRO_WORKER_POOL": "1"
+      }
+    },
+
+    "preview-aab": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_ENV": "preview",
+        "EXPO_PUBLIC_API_URL": "https://rhazn-video-production.up.railway.app",
+        "EXPO_USE_METRO_WORKER_POOL": "1"
+      }
+    },
+
+    "production": {
+      "distribution": "store",
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "ios": {
+        "buildConfiguration": "Release"
+      },
+      "env": {
+        "EXPO_PUBLIC_ENV": "production",
+        "EXPO_PUBLIC_API_URL": "https://rhazn-video-production.up.railway.app"
+      }
+    },
+
+    "prod-fastlane": {
+      "distribution": "store",
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "FASTLANE": "true",
+        "PLAY_STORE_TRACK": "production",
+        "EXPO_PUBLIC_ENV": "production",
+        "EXPO_PUBLIC_API_URL": "https://rhazn-video-production.up.railway.app",
+        "EXPO_USE_METRO_WORKER_POOL": "1"
+      }
+    }
+  },
+
+  "submit": {
+    "production": {},
+
+    "prod-fastlane": {
+      "android": {
+        "track": "production"
+      }
+    }
+  }
+}

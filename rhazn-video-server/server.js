@@ -50,7 +50,7 @@ app.post("/create-video", upload.single("video"), async (req, res) => {
       console.log("📥 Attempting fetch with timeout of 30 seconds...");
       
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
+     const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minutes
       
       const response = await fetch(audioUrl, {
         signal: controller.signal,

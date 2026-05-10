@@ -19,16 +19,23 @@ const OUTPUT_DIR = path.join(__dirname, "outputs");
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
 
-// ✅ config multer
-const upload = multer({ dest: UPLOAD_DIR });
+// ✅ config multer AVEC LIMITES AUGMENTÉES
+const upload = multer({ 
+  dest: UPLOAD_DIR,
+  limits: { fileSize: 500 * 1024 * 1024 } // 500MB max
+});
 
 // ✅ route test
 app.get("/", (req, res) => {
   res.send("✅ RHAZN server running");
 });
 
-// ✅ route principale — AVEC LOGS DÉTAILLÉS
+// ✅ route principale — CORRIGÉE AVEC TIMEOUTS
 app.post("/create-video", upload.single("video"), async (req, res) => {
+  // ✅ AUGMENTER TIMEOUT À 10 MINUTES
+  req.setTimeout(600000);
+  res.setTimeout(600000);
+  
   try {
     if (!req.file) {
       return res.status(400).send("No video uploaded");
@@ -47,10 +54,10 @@ app.post("/create-video", upload.single("video"), async (req, res) => {
     // ✅ Télécharger l'audio depuis l'URL
     try {
       console.log("📥 Downloading audio from:", audioUrl);
-      console.log("📥 Attempting fetch with timeout of 30 seconds...");
+      console.log("📥 Attempting fetch with timeout of 300 seconds (5 min)...");
       
       const controller = new AbortController();
-     const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minutes
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
       
       const response = await fetch(audioUrl, {
         signal: controller.signal,

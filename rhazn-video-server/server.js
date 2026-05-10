@@ -1,13 +1,13 @@
 // server.js — RHAZN Video Server ✅ PRODUCTION READY
-
 const express = require("express");
 const multer = require("multer");
 const { exec } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const cors = require("cors");
-
+const fetch = require("node-fetch"); // ← AJOUTER CET IMPORT
 const app = express();
+
 app.use(cors());
 app.use(express.json());
 
@@ -27,56 +27,93 @@ app.get("/", (req, res) => {
   res.send("✅ RHAZN server running");
 });
 
-// ✅ route principale
-app.post("/create-video", upload.single("video"), (req, res) => {
+// ✅ route principale — CORRIGÉE
+app.post("/create-video", upload.single("video"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).send("No video uploaded");
     }
 
     const videoPath = req.file.path;
-    const audioPath = path.join(__dirname, "audio.mp3");
+    const audioUrl = req.body.audioUrl;
+    
+    if (!audioUrl) {
+      fs.unlink(videoPath, () => {});
+      return res.status(400).send("audioUrl parameter required");
+    }
 
+    const audioPath = "/tmp/audio_" + Date.now() + ".mp3";
+
+    // ✅ Télécharger l'audio depuis l'URL
+    try {
+      console.log("📥 Downloading audio from:", audioUrl);
+      const response = await fetch(audioUrl);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const buffer = await response.buffer();
+      fs.writeFileSync(audioPath, buffer);
+      console.log("✅ Audio downloaded successfully:", audioPath);
+      
+    } catch (e) {
+      console.error("❌ Error downloading audio:", e.message);
+      fs.unlink(videoPath, () => {});
+      return res.status(400).send("Failed to download audio: " + e.message);
+    }
+
+    // ✅ Vérifier que l'audio existe
     if (!fs.existsSync(audioPath)) {
-      return res.status(400).send("audio.mp3 not found");
+      fs.unlink(videoPath, () => {});
+      return res.status(400).send("Audio file failed to save");
     }
 
     const outputFile = `output-${Date.now()}.mp4`;
     const outputPath = path.join(OUTPUT_DIR, outputFile);
 
+    // ✅ FFmpeg command
     const cmd = `
-      ffmpeg -y -i "${videoPath}" -i "${audioPath}"
-      -map 0:v:0 -map 1:a:0
-      -c:v copy -c:a aac -shortest
+      ffmpeg -y \
+      -i "${videoPath}" \
+      -i "${audioPath}" \
+      -map 0:v:0 -map 1:a:0 \
+      -c:v copy -c:a aac \
+      -shortest \
       "${outputPath}"
     `;
 
+    console.log("🎬 Running FFmpeg...");
+    
     exec(cmd, (err) => {
-      // supprimer fichier temporaire
+      // ✅ Nettoyer les fichiers temporaires
       fs.unlink(videoPath, () => {});
+      fs.unlink(audioPath, () => {});
 
       if (err) {
-        console.error("FFmpeg error:", err);
-        return res.status(500).send("ffmpeg error");
+        console.error("❌ FFmpeg error:", err.message);
+        return res.status(500).send("FFmpeg error: " + err.message);
       }
 
+      console.log("✅ Video created successfully:", outputFile);
+      
       res.json({
         success: true,
-        url: `/outputs/${outputFile}` // ✅ FIX PRODUCTION
+        url: `/outputs/${outputFile}` // ✅ URL relative
       });
     });
+
   } catch (e) {
-    console.error(e);
-    res.status(500).send("server error");
+    console.error("❌ Server error:", e);
+    res.status(500).send("Server error: " + e.message);
   }
 });
 
-// ✅ servir fichiers
+// ✅ Servir fichiers statiques
 app.use("/outputs", express.static(OUTPUT_DIR));
 
 // ✅ PORT RAILWAY (IMPORTANT)
 const PORT = process.env.PORT || 3000;
-
 app.listen(PORT, "0.0.0.0", () => {
   console.log("🚀 Server running on port " + PORT);
 });

@@ -1,10 +1,16 @@
-// components/MusicCatalogModal.tsx
-// ✅ RHAZN — Catalogue de musiques pour Suspentz
-// ✅ Un seul morceau à la fois — stop immédiat à la fermeture — lecture instantanée
-// ✅ FIX — Stop auto quand on quitte l'interface (AppState + visible=false)
+/**
+ * components/MusicDownloadModal.tsx
+ * ✅ RHAZN — Télécharger les musiques exclusives
+ * ✅ Télécharge les MP3 sur le téléphone (Documents)
+ * ✅ Aperçu audio + état du téléchargement
+ * ✅ Recherche par titre/artiste/genre
+ * ✅ Charge les musiques depuis Supabase
+ */
 
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
+import * as FileSystem from "expo-file-system";
+import * as Haptics from "expo-haptics";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -50,33 +56,39 @@ export type MusicTrack = {
   genre:        string | null;
 };
 
-type Props = {
-  visible:     boolean;
-  onClose:     () => void;
-  onSelect:    (track: MusicTrack) => void;
-  selectedId?: string | null;
+type DownloadState = {
+  [trackId: string]: {
+    status: "idle" | "downloading" | "done" | "error";
+    progress: number;
+    error?: string;
+  };
 };
 
-export default function MusicCatalogModal({ visible, onClose, onSelect, selectedId }: Props) {
-  const [tracks,    setTracks]    = useState<MusicTrack[]>([]);
-  const [loading,   setLoading]   = useState(true);
-  const [search,    setSearch]    = useState("");
-  const [playingId, setPlayingId] = useState<string | null>(null);
+type Props = {
+  visible:  boolean;
+  onClose:  () => void;
+};
 
-  // ✅ Ref unique — jamais deux sons en même temps
-  const soundRef    = useRef<Audio.Sound | null>(null);
-  const autoStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+export default function MusicDownloadModal({ visible, onClose }: Props) {
+  const [tracks,       setTracks]       = useState<MusicTrack[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [search,       setSearch]       = useState("");
+  const [playingId,    setPlayingId]    = useState<string | null>(null);
+  const [downloadState, setDownloadState] = useState<DownloadState>({});
 
-  // ✅ Configurer le mode audio pour lecture immédiate
+  const soundRef     = useRef<Audio.Sound | null>(null);
+  const autoStopRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ✅ Configurer le mode audio
   useEffect(() => {
     Audio.setAudioModeAsync({
       allowsRecordingIOS: false,
       playsInSilentModeIOS: true,
       staysActiveInBackground: false,
-    });
+    }).catch(() => {});
   }, []);
 
-  // ✅ FIX — Stop quand visible passe à false (navigation vers autre écran)
+  // ✅ Charger les musiques quand le modal s'ouvre
   useEffect(() => {
     if (visible) {
       loadTracks();
@@ -85,7 +97,7 @@ export default function MusicCatalogModal({ visible, onClose, onSelect, selected
     }
   }, [visible]);
 
-  // ✅ FIX — Stop quand l'app passe en arrière-plan (AppState)
+  // ✅ Stop au changement d'AppState
   useEffect(() => {
     const handleAppState = (nextState: AppStateStatus) => {
       if (nextState === "background" || nextState === "inactive") {
@@ -98,7 +110,7 @@ export default function MusicCatalogModal({ visible, onClose, onSelect, selected
     };
   }, []);
 
-  // ✅ FIX — Cleanup complet au démontage du composant
+  // ✅ Cleanup à la démo
   useEffect(() => {
     return () => {
       killSound();
@@ -107,16 +119,26 @@ export default function MusicCatalogModal({ visible, onClose, onSelect, selected
 
   const loadTracks = async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from("music_tracks")
-      .select("id, title, artist, duration_sec, file_url, genre")
-      .eq("is_active", true)
-      .order("created_at", { ascending: false });
-    setTracks((data ?? []) as MusicTrack[]);
+    try {
+      const { data, error } = await supabase
+        .from("music_tracks")
+        .select("id, title, artist, duration_sec, file_url, genre")
+        .eq("is_active", true)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("❌ Erreur chargement catalogue:", error);
+        setTracks([]);
+      } else {
+        setTracks((data ?? []) as MusicTrack[]);
+      }
+    } catch (e) {
+      console.error("❌ Erreur chargement catalogue:", e);
+      setTracks([]);
+    }
     setLoading(false);
   };
 
-  // ✅ killSound — arrêt brutal immédiat, sans await pour ne pas bloquer
   const killSound = () => {
     if (autoStopRef.current) {
       clearTimeout(autoStopRef.current);
@@ -131,23 +153,17 @@ export default function MusicCatalogModal({ visible, onClose, onSelect, selected
     }
   };
 
-  const handleClose = () => {
-    killSound(); // ✅ FIX — Stop immédiat à la fermeture
-    onClose();
-  };
-
-  // ✅ Lecture instantanée — on charge avec shouldPlay: true directement
   const togglePreview = async (track: MusicTrack) => {
-    // Même morceau → pause
     if (playingId === track.id) {
       killSound();
       return;
     }
 
-    // Tuer l'ancien immédiatement (sans attendre)
     killSound();
 
     try {
+      Haptics.selectionAsync().catch(() => {});
+
       const { sound } = await Audio.Sound.createAsync(
         { uri: track.file_url },
         {
@@ -158,7 +174,6 @@ export default function MusicCatalogModal({ visible, onClose, onSelect, selected
         true
       );
 
-      // Vérifier qu'on n'a pas déjà changé entre temps
       if (soundRef.current !== null) {
         sound.stopAsync().catch(() => {});
         sound.unloadAsync().catch(() => {});
@@ -173,7 +188,6 @@ export default function MusicCatalogModal({ visible, onClose, onSelect, selected
         if (soundRef.current === sound) killSound();
       }, 30_000);
 
-      // ✅ Détecter fin naturelle
       sound.setOnPlaybackStatusUpdate((status) => {
         if (status.isLoaded && status.didJustFinish) {
           if (soundRef.current === sound) killSound();
@@ -181,37 +195,89 @@ export default function MusicCatalogModal({ visible, onClose, onSelect, selected
       });
 
     } catch (e) {
-      console.warn("MusicCatalog preview error:", e);
+      console.warn("❌ Erreur preview:", e);
       killSound();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
     }
   };
 
-  const handleSelect = async (track: MusicTrack) => {
-    killSound(); // ✅ FIX — Stop avant de sélectionner
+  // ✅ TÉLÉCHARGER LA MUSIQUE
+  const downloadMusic = async (track: MusicTrack) => {
+    try {
+      setDownloadState((prev) => ({
+        ...prev,
+        [track.id]: { status: "downloading", progress: 0 },
+      }));
 
-    let finalTrack = track;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 
-    if (!track.duration_sec || track.duration_sec <= 0) {
-      try {
-        const { sound, status } = await Audio.Sound.createAsync(
-          { uri: track.file_url },
-          { shouldPlay: false }
-        );
-        const realDur = Math.round(((status as any)?.durationMillis ?? 0) / 1000);
-        await sound.unloadAsync();
+      // ✅ Créer le chemin de destination
+      const docDir = FileSystem.documentDirectory ?? "";
+      const fileName = `${track.title.replace(/[^a-z0-9]/gi, "_")}_${track.id.slice(0, 8)}.mp3`;
+      const filePath = `${docDir}${fileName}`;
 
-        if (realDur > 0) {
-          supabase.from("music_tracks")
-            .update({ duration_sec: realDur })
-            .eq("id", track.id)
-            .then(() => {});
-          finalTrack = { ...track, duration_sec: realDur };
+      // ✅ Télécharger le fichier
+      const downloadResult = await FileSystem.downloadAsync(
+        track.file_url,
+        filePath,
+        {
+          progressCallback: (progress) => {
+            const percent = Math.round(
+              (progress.totalBytesSent / progress.totalBytesExpectedToSend) * 100
+            );
+            setDownloadState((prev) => ({
+              ...prev,
+              [track.id]: { status: "downloading", progress: percent },
+            }));
+          },
         }
-      } catch {}
-    }
+      );
 
-    onSelect(finalTrack);
-    onClose();
+      if (downloadResult.status === 200) {
+        console.log("✅ Musique téléchargée:", fileName);
+        setDownloadState((prev) => ({
+          ...prev,
+          [track.id]: { status: "done", progress: 100 },
+        }));
+
+        Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success
+        ).catch(() => {});
+
+        // ✅ Auto-reset après 3 secondes
+        setTimeout(() => {
+          setDownloadState((prev) => ({
+            ...prev,
+            [track.id]: { status: "idle", progress: 0 },
+          }));
+        }, 3000);
+
+      } else {
+        throw new Error("Erreur téléchargement");
+      }
+
+    } catch (error: any) {
+      console.error("❌ Erreur téléchargement:", error);
+      setDownloadState((prev) => ({
+        ...prev,
+        [track.id]: {
+          status: "error",
+          progress: 0,
+          error: error.message || "Erreur inconnue",
+        },
+      }));
+
+      Haptics.notificationAsync(
+        Haptics.NotificationFeedbackType.Error
+      ).catch(() => {});
+
+      setTimeout(() => {
+        setDownloadState((prev) => ({
+          ...prev,
+          [track.id]: { status: "idle", progress: 0 },
+        }));
+      }, 3000);
+    }
   };
 
   const filtered = tracks.filter((t) => {
@@ -225,9 +291,14 @@ export default function MusicCatalogModal({ visible, onClose, onSelect, selected
   });
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
       <View style={m.overlay}>
-        <Pressable style={m.backdrop} onPress={handleClose} />
+        <Pressable style={m.backdrop} onPress={onClose} />
         <View style={m.sheet}>
 
           {/* Handle */}
@@ -237,16 +308,22 @@ export default function MusicCatalogModal({ visible, onClose, onSelect, selected
           <View style={m.header}>
             <View style={m.headerLeft}>
               <View style={m.iconWrap}>
-                <Ionicons name="musical-notes" size={18} color={C.gold} />
+                <Ionicons name="download" size={18} color={C.gold} />
               </View>
               <View>
-                <Text style={m.headerTitle}>Catalogue Musique</Text>
+                <Text style={m.headerTitle}>Musiques RHAZN</Text>
                 <Text style={m.headerSub}>
-                  {filtered.length} piste{filtered.length > 1 ? "s" : ""} disponible{filtered.length > 1 ? "s" : ""}
+                  {filtered.length} piste{filtered.length > 1 ? "s" : ""} exclusive{filtered.length > 1 ? "s" : ""}
                 </Text>
               </View>
             </View>
-            <Pressable onPress={handleClose} style={m.closeBtn}>
+            <Pressable
+              onPress={onClose}
+              style={({ pressed }) => [
+                m.closeBtn,
+                pressed && { opacity: 0.7 },
+              ]}
+            >
               <Ionicons name="close" size={18} color={C.muted} />
             </Pressable>
           </View>
@@ -274,17 +351,39 @@ export default function MusicCatalogModal({ visible, onClose, onSelect, selected
           {loading ? (
             <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12 }}>
               <ActivityIndicator color={C.gold} size="large" />
-              <Text style={{ color: C.gray, fontWeight: "700" }}>Chargement du catalogue…</Text>
+              <Text style={{ color: C.gray, fontWeight: "700" }}>
+                Chargement du catalogue…
+              </Text>
             </View>
           ) : filtered.length === 0 ? (
-            <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 40 }}>
+            <View
+              style={{
+                flex: 1,
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 12,
+                paddingHorizontal: 40,
+              }}
+            >
               <View style={m.emptyIcon}>
-                <Ionicons name="musical-notes-outline" size={32} color={C.gold} />
+                <Ionicons
+                  name="musical-notes-outline"
+                  size={32}
+                  color={C.gold}
+                />
               </View>
               <Text style={{ color: C.white, fontWeight: "900", fontSize: 16 }}>
                 {search ? "Aucun résultat" : "Catalogue vide"}
               </Text>
-              <Text style={{ color: C.muted, fontWeight: "600", fontSize: 13, textAlign: "center", lineHeight: 19 }}>
+              <Text
+                style={{
+                  color: C.muted,
+                  fontWeight: "600",
+                  fontSize: 13,
+                  textAlign: "center",
+                  lineHeight: 19,
+                }}
+              >
                 {search
                   ? `Aucune piste ne correspond à "${search}"`
                   : "L'administrateur RHAZN n'a pas encore ajouté de pistes musicales."}
@@ -298,16 +397,27 @@ export default function MusicCatalogModal({ visible, onClose, onSelect, selected
               contentContainerStyle={{ paddingBottom: 40, paddingTop: 4 }}
               ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
               renderItem={({ item }) => {
-                const isSelected = selectedId === item.id;
-                const isPlaying  = playingId === item.id;
+                const state = downloadState[item.id] ?? {
+                  status: "idle",
+                  progress: 0,
+                };
+                const isPlaying = playingId === item.id;
+                const isDownloading = state.status === "downloading";
+                const isDone = state.status === "done";
+                const isError = state.status === "error";
 
                 return (
-                  <View style={[m.trackCard, isSelected && m.trackCardSelected]}>
+                  <View style={m.trackCard}>
 
                     {/* Bouton preview */}
                     <Pressable
                       onPress={() => togglePreview(item)}
-                      style={[m.previewBtn, isPlaying && m.previewBtnActive]}
+                      disabled={isDownloading}
+                      style={({ pressed }) => [
+                        m.previewBtn,
+                        isPlaying && m.previewBtnActive,
+                        pressed && !isDownloading && { opacity: 0.8 },
+                      ]}
                     >
                       <Ionicons
                         name={isPlaying ? "pause" : "play"}
@@ -318,39 +428,104 @@ export default function MusicCatalogModal({ visible, onClose, onSelect, selected
 
                     {/* Infos */}
                     <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                        <Text style={m.trackTitle} numberOfLines={1}>{item.title}</Text>
-                        {isSelected && (
-                          <View style={m.selectedBadge}>
-                            <Ionicons name="checkmark" size={9} color="#000" />
-                            <Text style={m.selectedBadgeTxt}>Sélectionné</Text>
-                          </View>
-                        )}
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                      >
+                        <Text
+                          style={m.trackTitle}
+                          numberOfLines={1}
+                        >
+                          {item.title}
+                        </Text>
                       </View>
                       <Text style={m.trackMeta}>
                         {item.artist}
                         {item.genre ? ` · ${item.genre}` : ""}
-                        {item.duration_sec > 0 ? ` · ${fmtTime(item.duration_sec)}` : ""}
+                        {item.duration_sec > 0
+                          ? ` · ${fmtTime(item.duration_sec)}`
+                          : ""}
                       </Text>
 
                       {isPlaying && (
                         <View style={m.waveRow}>
                           {[1, 2, 3, 4, 5, 4, 3, 2, 1].map((h, i) => (
-                            <View key={i} style={[m.waveLine, { height: h * 3 }]} />
+                            <View
+                              key={i}
+                              style={[
+                                m.waveLine,
+                                { height: h * 3 },
+                              ]}
+                            />
                           ))}
-                          <Text style={m.playingTxt}>Écoute en cours…</Text>
+                          <Text style={m.playingTxt}>
+                            Écoute en cours…
+                          </Text>
+                        </View>
+                      )}
+
+                      {isDownloading && (
+                        <View style={m.progressBar}>
+                          <View
+                            style={[
+                              m.progressFill,
+                              { width: `${state.progress}%` },
+                            ]}
+                          />
                         </View>
                       )}
                     </View>
 
-                    {/* Bouton choisir */}
+                    {/* Bouton télécharger */}
                     <Pressable
-                      onPress={() => handleSelect(item)}
-                      style={[m.selectBtn, isSelected && m.selectBtnActive]}
+                      disabled={isDownloading}
+                      onPress={() => downloadMusic(item)}
+                      style={({ pressed }) => [
+                        m.downloadBtn,
+                        isDone && m.downloadBtnDone,
+                        isError && m.downloadBtnError,
+                        pressed && !isDownloading && { opacity: 0.8 },
+                      ]}
                     >
-                      <Text style={[m.selectBtnTxt, isSelected && m.selectBtnTxtActive]}>
-                        {isSelected ? "✓ Choisi" : "Choisir"}
-                      </Text>
+                      {isDownloading ? (
+                        <ActivityIndicator color={C.gold} size={14} />
+                      ) : isDone ? (
+                        <>
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={14}
+                            color={C.ok}
+                          />
+                          <Text style={m.downloadBtnTxtDone}>
+                            Fait
+                          </Text>
+                        </>
+                      ) : isError ? (
+                        <>
+                          <Ionicons
+                            name="alert-circle"
+                            size={14}
+                            color="#FF3B30"
+                          />
+                          <Text style={m.downloadBtnTxtError}>
+                            Erreur
+                          </Text>
+                        </>
+                      ) : (
+                        <>
+                          <Ionicons
+                            name="cloud-download"
+                            size={14}
+                            color={C.gold}
+                          />
+                          <Text style={m.downloadBtnTxt}>
+                            Télécharger
+                          </Text>
+                        </>
+                      )}
                     </Pressable>
                   </View>
                 );
@@ -364,47 +539,211 @@ export default function MusicCatalogModal({ visible, onClose, onSelect, selected
 }
 
 const m = StyleSheet.create({
-  overlay:  { flex: 1, justifyContent: "flex-end" },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.65)" },
+  overlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.65)",
+  },
   sheet: {
     backgroundColor: "#0A0A0A",
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    paddingHorizontal: 18, paddingTop: 10, paddingBottom: 0,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 0,
     height: "85%",
-    borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.10)",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.10)",
   },
-  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.20)", alignSelf: "center", marginBottom: 16 },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.20)",
+    alignSelf: "center",
+    marginBottom: 16,
+  },
 
-  header:     { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
-  headerLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
-  iconWrap:   { width: 38, height: 38, borderRadius: 11, backgroundColor: C.goldDim, borderWidth: 1, borderColor: C.goldBd, alignItems: "center", justifyContent: "center" },
-  headerTitle:{ color: C.white, fontWeight: "900", fontSize: 17 },
-  headerSub:  { color: C.gray,  fontWeight: "600", fontSize: 11, marginTop: 1 },
-  closeBtn:   { width: 34, height: 34, borderRadius: 10, backgroundColor: "rgba(255,255,255,0.06)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.10)" },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 14,
+  },
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  iconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    backgroundColor: C.goldDim,
+    borderWidth: 1,
+    borderColor: C.goldBd,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerTitle: {
+    color: C.white,
+    fontWeight: "900",
+    fontSize: 17,
+  },
+  headerSub: {
+    color: C.gray,
+    fontWeight: "600",
+    fontSize: 11,
+    marginTop: 1,
+  },
+  closeBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
+  },
 
-  searchWrap:  { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#111", borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11, borderWidth: 1, borderColor: "rgba(255,255,255,0.10)", marginBottom: 12 },
-  searchInput: { flex: 1, color: C.white, fontSize: 14, fontWeight: "600" },
+  searchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#111",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
+    marginBottom: 12,
+  },
+  searchInput: {
+    flex: 1,
+    color: C.white,
+    fontSize: 14,
+    fontWeight: "600",
+  },
 
-  emptyIcon: { width: 72, height: 72, borderRadius: 22, backgroundColor: C.goldDim, borderWidth: 1, borderColor: C.goldBd, alignItems: "center", justifyContent: "center" },
+  emptyIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 22,
+    backgroundColor: C.goldDim,
+    borderWidth: 1,
+    borderColor: C.goldBd,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
-  trackCard:         { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#0E0E0E", borderRadius: 16, padding: 12, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" },
-  trackCardSelected: { borderColor: C.gold, backgroundColor: "rgba(212,175,55,0.06)" },
+  trackCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#0E0E0E",
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
 
-  previewBtn:       { width: 40, height: 40, borderRadius: 12, backgroundColor: C.goldDim, borderWidth: 1, borderColor: C.goldBd, alignItems: "center", justifyContent: "center", flexShrink: 0 },
-  previewBtnActive: { backgroundColor: C.gold, borderColor: C.gold },
+  previewBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: C.goldDim,
+    borderWidth: 1,
+    borderColor: C.goldBd,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  previewBtnActive: {
+    backgroundColor: C.gold,
+    borderColor: C.gold,
+  },
 
-  trackTitle: { color: C.white, fontWeight: "800", fontSize: 14, flex: 1 },
-  trackMeta:  { color: C.gray,  fontWeight: "600", fontSize: 11, marginTop: 3 },
+  trackTitle: {
+    color: C.white,
+    fontWeight: "800",
+    fontSize: 14,
+    flex: 1,
+  },
+  trackMeta: {
+    color: C.gray,
+    fontWeight: "600",
+    fontSize: 11,
+    marginTop: 3,
+  },
 
-  selectedBadge:    { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: C.gold, borderRadius: 6, paddingHorizontal: 5, paddingVertical: 2 },
-  selectedBadgeTxt: { color: "#000", fontWeight: "900", fontSize: 9 },
+  waveRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    marginTop: 5,
+  },
+  waveLine: {
+    width: 3,
+    backgroundColor: C.gold,
+    borderRadius: 2,
+  },
+  playingTxt: {
+    color: C.gold,
+    fontWeight: "700",
+    fontSize: 10,
+    marginLeft: 4,
+  },
 
-  waveRow:    { flexDirection: "row", alignItems: "center", gap: 3, marginTop: 5 },
-  waveLine:   { width: 3, backgroundColor: C.gold, borderRadius: 2 },
-  playingTxt: { color: C.gold, fontWeight: "700", fontSize: 10, marginLeft: 4 },
+  progressBar: {
+    height: 4,
+    backgroundColor: "rgba(212,175,55,0.2)",
+    borderRadius: 2,
+    marginTop: 6,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    backgroundColor: C.gold,
+    borderRadius: 2,
+  },
 
-  selectBtn:          { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12, backgroundColor: "rgba(212,175,55,0.12)", borderWidth: 1, borderColor: C.goldBd, flexShrink: 0 },
-  selectBtnActive:    { backgroundColor: C.gold, borderColor: C.gold },
-  selectBtnTxt:       { color: C.gold, fontWeight: "900", fontSize: 12 },
-  selectBtnTxtActive: { color: "#000" },
+  downloadBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: "rgba(212,175,55,0.12)",
+    borderWidth: 1,
+    borderColor: C.goldBd,
+    flexShrink: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  downloadBtnDone: {
+    backgroundColor: "rgba(52,199,89,0.12)",
+    borderColor: "rgba(52,199,89,0.28)",
+  },
+  downloadBtnError: {
+    backgroundColor: "rgba(255,59,48,0.12)",
+    borderColor: "rgba(255,59,48,0.28)",
+  },
+  downloadBtnTxt: {
+    color: C.gold,
+    fontWeight: "900",
+    fontSize: 11,
+  },
+  downloadBtnTxtDone: {
+    color: C.ok,
+    fontWeight: "900",
+    fontSize: 11,
+  },
+  downloadBtnTxtError: {
+    color: "#FF3B30",
+    fontWeight: "900",
+    fontSize: 11,
+  },
 });

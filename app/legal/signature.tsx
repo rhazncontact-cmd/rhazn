@@ -227,7 +227,7 @@ export default function SignatureAppleScreen() {
             {/* ✅ Logo RHAZN au lieu du texte */}
             <View style={st.logoWrap}>
               <Image
-                source={require("../../assets/images/grape.png")}
+                source={require("../../assets/images/rz-logo-trans.png")}
                 style={st.logo}
                 resizeMode="contain"
               />

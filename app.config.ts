@@ -1,3 +1,5 @@
+// ✅ FIX EXPO ROUTER
+
 import "dotenv/config";
 import { ConfigContext, ExpoConfig } from "expo/config";
 
@@ -8,9 +10,9 @@ import { ConfigContext, ExpoConfig } from "expo/config";
 const APP_ID      = "com.rhzn.dev";
 const APP_VERSION = "1.3.2";
 
+
 export default ({ config }: ConfigContext): ExpoConfig => {
   const ENV = process.env.EXPO_PUBLIC_ENV || "production";
-
   return {
     ...config,
 
@@ -99,7 +101,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         NSCameraUsageDescription:
           "RHAZN utilise la caméra pour filmer vos contenus.",
         NSMicrophoneUsageDescription:
-          "RHAZN utilise le micro pour enregistrer l’audio.",
+          "RHAZN utilise le micro pour enregistrer l'audio.",
         NSPhotoLibraryUsageDescription:
           "RHAZN accède à votre galerie pour sélectionner et publier des vidéos.",
         NSPhotoLibraryAddUsageDescription:
@@ -119,7 +121,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     // ═══════════════════════════════════════
     // PLUGINS
     // ═══════════════════════════════════════
+   // ═══════════════════════════════════════
+    // PLUGINS
+    // ═══════════════════════════════════════
     plugins: [
+      // ✅ FIX: Juste "expo-router" sans options
       "expo-router",
       "expo-av",
       "expo-web-browser",
@@ -179,7 +185,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       // ✅ API sécurisée avec fallback
       apiUrl:
         process.env.EXPO_PUBLIC_API_URL ||
-        "https://rhazn-video-production.up.railway.app",
+        "https://rhazn-backend-production.up.railway.app",
 
       supabaseUrl:     process.env.EXPO_PUBLIC_SUPABASE_URL,
       supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,

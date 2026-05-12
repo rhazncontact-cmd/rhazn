@@ -69,6 +69,9 @@ const ensureDir = async () => {
     if (!i.exists) await FileSystem.makeDirectoryAsync(VIDEO_DIR, { intermediates: true });
   } catch {}
 };
+
+
+
 const dlVideo = async (uri: string, id: string): Promise<string> => {
   try {
     await ensureDir();

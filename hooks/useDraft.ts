@@ -1,17 +1,18 @@
-// hooks/useDraft.ts — VERSION FINALE PRODUCTION ✅✅✅
+// hooks/useDraft.ts — VERSION PRODUCTION UPDATED ✅✅✅
 
 import * as FileSystem from "expo-file-system";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-    clearDraft,
-    EMPTY_DRAFT,
-    hasDraft,
-    loadDraft,
-    saveDraft,
-    SuspentzDraft,
+  clearDraft,
+  EMPTY_DRAFT,
+  hasDraft,
+  loadDraft,
+  saveDraft,
+  SuspentzDraft,
 } from "../lib/draftService";
 
 import { API_URL } from "../config/api";
+import { stripAudio } from "../lib/ffmpeg/stripAudio";
 
 const AUTOSAVE_INTERVAL_MS = 8000;
 const DEBOUNCE_SAVE_MS = 600;
@@ -105,7 +106,7 @@ export function useDraft() {
     setStatus("saved");
   };
 
-  // ✅ GENERATE VIDEO (ULTRA STABLE)
+  // ✅ GENERATE VIDEO (ULTRA STABLE) - VERSION MISE À JOUR
   const generateVideo = useCallback(async (): Promise<string | null> => {
     const d = draftRef.current;
 
@@ -118,25 +119,47 @@ export function useDraft() {
       setStatus("processing");
       setProgress(10);
 
+      // 🔇 ÉTAPE 1: SUPPRIMER LE SON ORIGINAL
+      console.log("🔇 Starting to strip audio from video...");
+      const mutedVideoUri = await stripAudio(d.videoUri, (percent) => {
+        console.log(`🔇 Stripping progress: ${percent}%`);
+        setProgress(Math.min(40, 10 + percent * 0.3));
+      });
+
+      if (!mutedVideoUri) {
+        console.error("❌ Failed to strip audio");
+        setStatus("error");
+        return null;
+      }
+
+      console.log("✅ Audio stripped successfully");
+      setProgress(45);
+
+      // 📤 ÉTAPE 2: ENVOYER VIDÉO MUETTE + SON RHAZN AU SERVEUR
       const fileUri =
         FileSystem.cacheDirectory + `final_${Date.now()}.mp4`;
 
       const formData = new FormData();
 
+      // ✅ Envoyer la vidéo MUETTE (sans son original)
       formData.append("video", {
-        uri: normalizeUri(d.videoUri),
-        name: "video.mp4",
+        uri: normalizeUri(mutedVideoUri),
+        name: "muted.mp4",
         type: "video/mp4",
       } as any);
 
+      // ✅ Envoyer le son RHAZN obligatoire
       formData.append("audio", {
         uri: normalizeUri(d.selectedTrack.file_url),
-        name: "audio.mp3",
+        name: "rhazn.mp3",
         type: "audio/mpeg",
       } as any);
 
       formData.append("start", String(d.audioStartSec || 0));
       formData.append("duration", String(d.durationSec || 0));
+
+      console.log("📤 Sending to server /render...");
+      setProgress(50);
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
@@ -153,22 +176,31 @@ export function useDraft() {
         }
       );
 
+      setProgress(75);
       const result = await downloadResumable.downloadAsync();
 
       clearTimeout(timeout);
 
       if (!result || !result.uri) {
+        console.error("❌ Download failed from /render");
         throw new Error("Download failed");
       }
 
-      setProgress(100);
+      console.log("✅ Video received from server");
+      setProgress(95);
+
+      // ✅ ÉTAPE 3: ENREGISTRER LA VIDÉO FINALE
       updateDraft({ finalVideoUri: result.uri });
+      setProgress(100);
       setStatus("ready");
 
+      console.log("✅ Final video ready for preview and publish");
       return result.uri;
+
     } catch (e) {
-      console.error("VIDEO GENERATION ERROR:", e);
+      console.error("❌ VIDEO GENERATION ERROR:", e);
       setStatus("error");
+      setProgress(0);
       return null;
     }
   }, [updateDraft]);

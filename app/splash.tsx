@@ -113,7 +113,7 @@ export default function SplashScreen() {
         }}
       >
         <Image
-          source={require("../assets/images/grape.png")}
+          source={require("../assets/images/rz-logo-trans.png")}
           style={s.logo}
           resizeMode="contain"
         />

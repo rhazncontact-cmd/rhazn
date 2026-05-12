@@ -6,6 +6,9 @@
 // ✅ usePresence — ping toutes les 30s quand app ouverte
 // ======================================================
 
+// ✅ DOIT être ligne 1 ABSOLUE
+import 'react-native-gesture-handler';
+
 import * as NavigationBar from "expo-navigation-bar";
 import * as Notifications from "expo-notifications";
 import { Slot, usePathname, useRouter } from "expo-router";
@@ -19,6 +22,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
 import 'react-native-gesture-handler';
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";

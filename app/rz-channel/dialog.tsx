@@ -479,7 +479,14 @@ if (error) {
 }
 
 // 3) Nouvelle conversation créée par la RPC
-if (!convId && data?.conversation_id) {
+if (!convId && data?.conversation_id) {// Supabase retourne parfois le jsonb comme string
+const result = typeof data === "string" ? JSON.parse(data) : data;
+
+if (!convId && result?.conversation_id) {
+  setConvId(result.conversation_id);
+  await loadMessages(result.conversation_id, myUid);
+}
+
   setConvId(data.conversation_id);
   await loadMessages(data.conversation_id, myUid);
 }

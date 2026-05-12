@@ -1,6 +1,5 @@
-// hooks/useDraft.ts — VERSION PRODUCTION UPDATED ✅✅✅
+// hooks/useDraft.ts — VERSION PRODUCTION SIMPLIFIÉE ✅✅✅
 
-import * as FileSystem from "expo-file-system";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   clearDraft,
@@ -11,8 +10,7 @@ import {
   SuspentzDraft,
 } from "../lib/draftService";
 
-import { API_URL } from "../config/api";
-import { stripAudio } from "../lib/ffmpeg/stripAudio";
+import { supabase } from "../lib/supabase";
 
 const AUTOSAVE_INTERVAL_MS = 8000;
 const DEBOUNCE_SAVE_MS = 600;
@@ -106,96 +104,32 @@ export function useDraft() {
     setStatus("saved");
   };
 
-  // ✅ GENERATE VIDEO (ULTRA STABLE) - VERSION MISE À JOUR
+  // ✅ GENERATE VIDEO — VERSION SIMPLIFIÉE (GALLERY VIDEO DIRECTEMENT)
+  // ✅ Architecture nouvelle:
+  //   - Utilisateur sélectionne vidéo montée (CapCut + musique RHAZN déjà intégrée)
+  //   - On upload directement sans manipuler audio
+  //   - Plus de FFmpeg, plus de serveur de fusion
   const generateVideo = useCallback(async (): Promise<string | null> => {
     const d = draftRef.current;
 
-    if (!d.videoUri || !d.selectedTrack) {
-      console.warn("Missing video or audio");
+    if (!d.videoUri) {
+      console.warn("❌ Missing video URI");
       return null;
     }
 
     try {
       setStatus("processing");
-      setProgress(10);
+      setProgress(0);
 
-      // 🔇 ÉTAPE 1: SUPPRIMER LE SON ORIGINAL
-      console.log("🔇 Starting to strip audio from video...");
-      const mutedVideoUri = await stripAudio(d.videoUri, (percent) => {
-        console.log(`🔇 Stripping progress: ${percent}%`);
-        setProgress(Math.min(40, 10 + percent * 0.3));
-      });
-
-      if (!mutedVideoUri) {
-        console.error("❌ Failed to strip audio");
-        setStatus("error");
-        return null;
-      }
-
-      console.log("✅ Audio stripped successfully");
-      setProgress(45);
-
-      // 📤 ÉTAPE 2: ENVOYER VIDÉO MUETTE + SON RHAZN AU SERVEUR
-      const fileUri =
-        FileSystem.cacheDirectory + `final_${Date.now()}.mp4`;
-
-      const formData = new FormData();
-
-      // ✅ Envoyer la vidéo MUETTE (sans son original)
-      formData.append("video", {
-        uri: normalizeUri(mutedVideoUri),
-        name: "muted.mp4",
-        type: "video/mp4",
-      } as any);
-
-      // ✅ Envoyer le son RHAZN obligatoire
-      formData.append("audio", {
-        uri: normalizeUri(d.selectedTrack.file_url),
-        name: "rhazn.mp3",
-        type: "audio/mpeg",
-      } as any);
-
-      formData.append("start", String(d.audioStartSec || 0));
-      formData.append("duration", String(d.durationSec || 0));
-
-      console.log("📤 Sending to server /render...");
-      setProgress(50);
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
-
-      const downloadResumable = FileSystem.createDownloadResumable(
-        `${API_URL}/render`,
-        fileUri,
-        {
-          method: "POST",
-          body: formData,
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
-
-      setProgress(75);
-      const result = await downloadResumable.downloadAsync();
-
-      clearTimeout(timeout);
-
-      if (!result || !result.uri) {
-        console.error("❌ Download failed from /render");
-        throw new Error("Download failed");
-      }
-
-      console.log("✅ Video received from server");
-      setProgress(95);
-
-      // ✅ ÉTAPE 3: ENREGISTRER LA VIDÉO FINALE
-      updateDraft({ finalVideoUri: result.uri });
+      console.log("✅ Video ready for preview and publish (from gallery)");
       setProgress(100);
+      
+      // ✅ La vidéo est déjà montée avec la musique dans CapCut
+      // On la marque simplement comme prête
+      updateDraft({ finalVideoUri: d.videoUri });
       setStatus("ready");
 
-      console.log("✅ Final video ready for preview and publish");
-      return result.uri;
+      return d.videoUri;
 
     } catch (e) {
       console.error("❌ VIDEO GENERATION ERROR:", e);
@@ -205,50 +139,55 @@ export function useDraft() {
     }
   }, [updateDraft]);
 
-  // ✅ PUBLISH
-  const publish = useCallback(async () => {
+  // ✅ PUBLISH — Publication directe Supabase (RPC)
+  const publish = useCallback(async (formData: any) => {
     const d = draftRef.current;
 
     if (!d.finalVideoUri) {
-      console.warn("No final video");
+      console.warn("❌ No final video");
       return false;
     }
 
     try {
       setStatus("processing");
+      setProgress(50);
 
-      const formData = new FormData();
+      const { data: auth } = await supabase.auth.getUser();
+      const uid = auth?.user?.id;
 
-      formData.append("video", {
-        uri: normalizeUri(d.finalVideoUri),
-        name: "final.mp4",
-        type: "video/mp4",
-      } as any);
+      if (!uid) {
+        console.error("❌ No user session");
+        setStatus("error");
+        return false;
+      }
 
-      formData.append("title", d.title || "");
-      formData.append("audioId", d.selectedTrack?.id || "");
-      formData.append("start", String(d.audioStartSec || 0));
-      formData.append("end", String(d.audioEndSec || 0));
-
-      const controller = new AbortController();
-      setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
-
-      const res = await fetch(`${API_URL}/posts`, {
-        method: "POST",
-        body: formData,
-        signal: controller.signal,
+      // ✅ Call RPC to publish directly to Supabase
+      const { data, error } = await supabase.rpc("publish_suspentz_final", {
+        p_user_id: uid,
+        p_video_uri: d.finalVideoUri,
+        p_title: d.title || "Sans titre",
+        p_theme: formData?.theme || "general",
+        p_author: formData?.author || "",
+        p_description: formData?.description || "",
       });
 
-      if (!res.ok) throw new Error("Publish failed");
+      if (error) {
+        console.error("❌ RPC publish error:", error.message);
+        setStatus("error");
+        return false;
+      }
+
+      console.log("✅ Published successfully:", data);
 
       await clearDraft();
       setDraft(EMPTY_DRAFT);
       setStatus("ready");
-      setProgress(0);
+      setProgress(100);
 
       return true;
+
     } catch (e) {
-      console.error("PUBLISH ERROR:", e);
+      console.error("❌ PUBLISH ERROR:", e);
       setStatus("error");
       return false;
     }

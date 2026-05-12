@@ -1,5 +1,5 @@
 /**
- * app/publish/suspentz.tsx — RHAZN Suspentz Publisher v7 FINAL
+ * app/publish/suspentz.tsx — RHAZN Suspentz Publisher v7 FINAL FIXED
  * ✅ Nouvelle approche: Galerie → Formulaire → Publier
  * ✅ Pas d'éditeur audio, pas de FFmpeg, pas de fusion
  * ✅ L'utilisateur fait le montage dans CapCut + télécharge la musique RHAZN
@@ -10,6 +10,8 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
+import * as FileSystem from "expo-file-system";
+import { uploadAsync } from "expo-file-system/legacy";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
@@ -33,6 +35,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import MusicDownloadModal from "../../components/MusicDownloadModal";
 import {
   DuplicateCheckResult,
   useContentDuplicateCheck,
@@ -40,6 +43,7 @@ import {
 import { useDraft } from "../../hooks/useDraft";
 import { cleanOldFinals } from "../../lib/draftService";
 import { supabase } from "../../lib/supabase";
+
 
 // ─────────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -610,56 +614,6 @@ const dm = StyleSheet.create({
   },
 });
 
-// ─────────────────────────────────────────────────────────────────
-// MUSIC DOWNLOAD MODAL
-// ─────────────────────────────────────────────────────────────────
-function MusicDownloadModal({
-  visible,
-  onClose,
-}: {
-  visible: boolean;
-  onClose: () => void;
-}) {
-  // Simple placeholder - vous utilisez votre vrai MusicDownloadModal
-  if (!visible) return null;
-
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <View style={{ flex: 1, backgroundColor: C.bg }}>
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            paddingHorizontal: 16,
-            paddingTop: 16,
-            paddingBottom: 10,
-          }}
-        >
-          <Text style={{ color: C.white, fontSize: 18, fontWeight: "900" }}>
-            Musiques RHAZN
-          </Text>
-          <Pressable onPress={onClose}>
-            <Ionicons name="close" size={24} color={C.white} />
-          </Pressable>
-        </View>
-        <ScrollView
-          contentContainerStyle={{ padding: 16 }}
-          showsVerticalScrollIndicator={false}
-        >
-          <Text style={{ color: C.muted, textAlign: "center", marginTop: 100 }}>
-            Catalogue de musiques RHAZN
-          </Text>
-        </ScrollView>
-      </View>
-    </Modal>
-  );
-}
 
 // ─────────────────────────────────────────────────────────────────
 // DUPLICATE MODAL
@@ -1040,7 +994,6 @@ export default function PublishSuspentz() {
       let uri = asset.uri;
       if (Platform.OS === "android" && !uri.startsWith("file://")) {
         try {
-          const { FileSystem } = await import("expo-file-system");
           const dest = `${FileSystem.cacheDirectory}rz_pick_${Date.now()}.mp4`;
           await FileSystem.copyAsync({ from: uri, to: dest });
           uri = dest;
@@ -1151,15 +1104,15 @@ export default function PublishSuspentz() {
         await signRes.text()
       );
 
-      // ✅ Uploader la vidéo FINALE (avec la musique déjà montée dans CapCut)
-      const { FileSystem } = await import("expo-file-system");
-      const up = await FileSystem.uploadAsync(signedUrl, videoUri, {
+      // ✅ UPLOAD FIXÉ v3 — Utiliser le legacy API d'Expo (uploadAsync recommandé)
+      const up = await uploadAsync(signedUrl, videoUri, {
         httpMethod: "PUT",
-        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
         headers: { "Content-Type": contentType },
       });
-      if (up.status !== 200 && up.status !== 201)
-        throw new Error(`Upload (${up.status})`);
+
+      if (!up || up.status !== 200) {
+        throw new Error(`Upload failed (${up?.status})`);
+      }
 
       const { data: pub } = supabase.storage
         .from("suspentz")

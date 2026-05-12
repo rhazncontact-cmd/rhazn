@@ -6,9 +6,6 @@
 // ✅ usePresence — ping toutes les 30s quand app ouverte
 // ======================================================
 
-// ✅ DOIT être ligne 1 ABSOLUE
-import 'react-native-gesture-handler';
-
 import * as NavigationBar from "expo-navigation-bar";
 import * as Notifications from "expo-notifications";
 import { Slot, usePathname, useRouter } from "expo-router";
@@ -23,8 +20,6 @@ import {
   View,
 } from "react-native";
 
-import 'react-native-gesture-handler';
-import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import NetInfo from "@react-native-community/netinfo";
@@ -537,25 +532,25 @@ function LayoutInner() {
             Certaines fonctionnalités peuvent être limitées
           </Text>
 
-           {/* ✅ Bouton Fermer */}
-    <TouchableOpacity
-      onPress={() => setOffline(false)}
-      style={{
-        marginTop: 10,
-        alignSelf: "center",
-        backgroundColor: "#D4AF37",
-        borderRadius: 10,
-        paddingVertical: 6,
-        paddingHorizontal: 24,
-      }}
-      activeOpacity={0.8}
-    >
-      <Text style={{ color: "#000", fontWeight: "700", fontSize: 13 }}>
-        Compris
-      </Text>
-    </TouchableOpacity>
-  </View>
-)}
+          {/* ✅ Bouton Fermer */}
+          <TouchableOpacity
+            onPress={() => setOffline(false)}
+            style={{
+              marginTop: 10,
+              alignSelf: "center",
+              backgroundColor: "#D4AF37",
+              borderRadius: 10,
+              paddingVertical: 6,
+              paddingHorizontal: 24,
+            }}
+            activeOpacity={0.8}
+          >
+            <Text style={{ color: "#000", fontWeight: "700", fontSize: 13 }}>
+              Compris
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* ✅ Bouton flottant Répondre — admins support uniquement */}
       {hasSession && <FloatingReplyButton />}
@@ -573,7 +568,7 @@ function LayoutInner() {
 =================================================== */
 export default function RootLayout() {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <View style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ErrorBoundary>
           <UserProvider>
@@ -588,6 +583,6 @@ export default function RootLayout() {
           </UserProvider>
         </ErrorBoundary>
       </SafeAreaProvider>
-    </GestureHandlerRootView>
+    </View>
   );
 }

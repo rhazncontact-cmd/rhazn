@@ -22,7 +22,6 @@ import {
   Vibration,
   View,
 } from "react-native";
-import QRCode from "react-native-qrcode-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import agentPinStore from "../lib/agentPinStore";
 import { supabase } from "../lib/supabase";
@@ -561,12 +560,14 @@ Présentez ce code à l'utisateur RHAZN pour acheter ou retirer du TAN.
                   </TouchableOpacity>
                 </View>
 
-                {/* QR Code */}
+                {/* QR Code Placeholder */}
                 <View style={styles.qrWrap}>
-                  <QRCode value={agentCode} size={150} />
+                  <View style={styles.qrPlaceholder}>
+                    <Ionicons name="qr-code-outline" size={48} color={MUTED} />
+                  </View>
                 </View>
                 <Text style={styles.qrHint}>
-                  Présentez ce QR à vos clients
+                  Code QR disponible dans la version complète
                 </Text>
               </View>
             ) : (
@@ -742,6 +743,7 @@ const styles = StyleSheet.create({
   waBtn:    { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, backgroundColor: "rgba(37,211,102,0.10)", borderRadius: 14, paddingVertical: 12, borderWidth: 1, borderColor: "rgba(37,211,102,0.25)" },
   waBtnTxt: { color: "#25D366", fontWeight: "800", fontSize: 13 },
   qrWrap:   { backgroundColor: CARD, padding: 14, borderRadius: 18, borderWidth: 1, borderColor: SOFT, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
+  qrPlaceholder: { width: 150, height: 150, alignItems: "center", justifyContent: "center", backgroundColor: BG, borderRadius: 14, borderWidth: 1, borderColor: SOFT },
   qrHint:   { color: MUTED, fontSize: 11, fontWeight: "600" },
   emptyCode:{ alignItems: "center", paddingVertical: 20 },
 

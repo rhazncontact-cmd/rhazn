@@ -17,7 +17,7 @@ import * as Linking from "expo-linking";
 import * as NavigationBar from "expo-navigation-bar";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
@@ -34,7 +34,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle } from "react-native-svg";
-import RHAZN_LOGO from "../../assets/images/rz-logo-trans.png";
+import RHAZN_LOGO from "../../assets/images/rz-logo.png";
 import { avatarStore } from "../../lib/avatarStore";
 import { supabase } from "../../lib/supabase";
 

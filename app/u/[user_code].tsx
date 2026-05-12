@@ -1,15 +1,15 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Image,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import QRCode from "react-native-qrcode-svg";
 import { supabase } from "../../lib/supabase";
 
 /* 🎨 RHAZN PALETTE */
@@ -130,14 +130,13 @@ export default function PublicProfile() {
           </View>
         </View>
 
-        {/* QR */}
+        {/* QR PLACEHOLDER */}
         <View style={styles.qrBlock}>
-          <QRCode
-            value={`https://rhazn.com/u/${profile.user_code}`}
-            size={200}
-          />
+          <View style={styles.qrPlaceholder}>
+            <Ionicons name="qr-code-outline" size={56} color="#999" />
+          </View>
           <Text style={styles.qrHint}>
-            Scanner pour accéder au profil officiel
+            Code QR disponible dans la version complète
           </Text>
         </View>
       </View>
@@ -254,6 +253,17 @@ const styles = StyleSheet.create({
   qrBlock: {
     marginTop: 26,
     alignItems: "center",
+  },
+
+  qrPlaceholder: {
+    width: 200,
+    height: 200,
+    backgroundColor: "#F5F5F7",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E5E5EA",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   qrHint: {

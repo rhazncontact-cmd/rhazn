@@ -2,7 +2,7 @@
 // ✅ Badge rôle intelligent : CADNA-MEMBRE / Agent RHAZN / USER/CRÉATEUR
 // ✅ ACSET : 10 pour infos profil, 25 pour photo (SQL côté RPC)
 
-import { Feather } from "@expo/vector-icons";
+import { Feather, Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
@@ -18,7 +18,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import QRCode from "react-native-qrcode-svg";
 import PinVerifyModal from "../components/PinVerifyModal";
 import { supabase } from "../lib/supabase";
 
@@ -468,11 +467,12 @@ export default function UserProfile() {
           <Row label="Wallet status"  value={wallet?.status || "—"} />
         </Section>
 
-        {/* ── Actions ── */}
-
-
+        {/* ── QR Code Placeholder ── */}
         <View style={styles.qrWrap}>
-          <QRCode value={`https://rhazn.com/u/${profile.user_code}`} size={130} />
+          <View style={styles.qrPlaceholder}>
+            <Ionicons name="qr-code-outline" size={56} color="#999" />
+          </View>
+          <Text style={styles.qrHint}>Code QR disponible dans la version complète</Text>
         </View>
 
       </ScrollView>
@@ -533,7 +533,9 @@ const styles = StyleSheet.create({
   secondaryBtn:  { backgroundColor: COLORS.card, padding: 15, borderRadius: 18, alignItems: "center", marginTop: 10 },
   secondaryText: { fontWeight: "800", color: COLORS.text },
 
-  qrWrap: { alignItems: "center", marginTop: 28 },
+  qrWrap: { alignItems: "center", marginTop: 28, marginBottom: 20 },
+  qrPlaceholder: { width: 130, height: 130, backgroundColor: "#F5F5F7", borderRadius: 12, borderWidth: 1, borderColor: "#E5E5EA", alignItems: "center", justifyContent: "center" },
+  qrHint: { marginTop: 10, fontSize: 12, color: COLORS.sub, textAlign: "center" },
 
   progressHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   progressTitle:  { fontWeight: "900", color: COLORS.text },

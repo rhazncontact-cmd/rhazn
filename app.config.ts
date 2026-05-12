@@ -1,4 +1,5 @@
-// ✅ FIX EXPO ROUTER
+// ✅ RHAZN — app.json COMPLET FINAL — CORRIGÉ iOS 15.1
+// Copier-coller directement dans votre projet
 
 import "dotenv/config";
 import { ConfigContext, ExpoConfig } from "expo/config";
@@ -9,7 +10,6 @@ import { ConfigContext, ExpoConfig } from "expo/config";
 
 const APP_ID      = "com.rhzn.dev";
 const APP_VERSION = "1.3.2";
-
 
 export default ({ config }: ConfigContext): ExpoConfig => {
   const ENV = process.env.EXPO_PUBLIC_ENV || "production";
@@ -31,12 +31,18 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     // ═══════════════════════════════════════
     icon:                "./assets/images/rz-logo.png",
     assetBundlePatterns: ["**/*"],
+    splash: {
+      image:           "./assets/images/rhazn-logo.png",
+      resizeMode:      "contain",
+      backgroundColor: "#000000"
+    },
 
     // ═══════════════════════════════════════
     // ANDROID
     // ═══════════════════════════════════════
     android: {
       package: APP_ID,
+      versionCode: 132,
 
       adaptiveIcon: {
         foregroundImage: "./assets/images/rz-logo.png",
@@ -48,13 +54,20 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       permissions: [
         "CAMERA",
         "RECORD_AUDIO",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
 
-        // ✅ Android 13+
+        // ✅ Android 13+ — Media Access
         "android.permission.READ_MEDIA_IMAGES",
         "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO",
 
-        // ✅ compat anciens Android
-        "android.permission.READ_EXTERNAL_STORAGE"
+        // ✅ Compat anciens Android
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+
+        // ✅ Stockage documents
+        "android.permission.MANAGE_EXTERNAL_STORAGE"
       ],
 
       intentFilters: [
@@ -88,12 +101,14 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
 
     // ═══════════════════════════════════════
-    // iOS
+    // iOS — ⚠️ MINIMUM 15.1
     // ═══════════════════════════════════════
     ios: {
       bundleIdentifier:  APP_ID,
+      buildNumber:       "132",
       supportsTablet:    false,
       requireFullScreen: true,
+      deploymentTarget:  "15.1",  // ✅ MINIMUM REQUIS PAR EXPO
 
       associatedDomains: ["applinks:rhazn.org"],
 
@@ -106,8 +121,17 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           "RHAZN accède à votre galerie pour sélectionner et publier des vidéos.",
         NSPhotoLibraryAddUsageDescription:
           "RHAZN peut sauvegarder des vidéos dans votre galerie.",
+        NSDocumentPickerExportMessage:
+          "Permettre à RHAZN de sélectionner des fichiers audio pour les publier.",
+        NSAppleMusicsUsageDescription:
+          "RHAZN accède à votre musique pour enrichir vos publications.",
+        NSLocalNetworkUsageDescription:
+          "RHAZN a besoin d'accéder à votre réseau local.",
+        NSBonjourServiceTypes:
+          ["_rhazn._tcp", "_rhazn._udp"],
 
-        PHPhotoLibraryPreventAutomaticLimitedAccessAlert: false
+        PHPhotoLibraryPreventAutomaticLimitedAccessAlert: false,
+        ITSAppUsesNonExemptEncryption: false
       }
     },
 
@@ -115,23 +139,34 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     // WEB
     // ═══════════════════════════════════════
     web: {
-      favicon: "./assets/images/grape.png"
+      favicon: "./assets/images/grape.png",
+      bundler: "metro"
     },
 
     // ═══════════════════════════════════════
     // PLUGINS
     // ═══════════════════════════════════════
-   // ═══════════════════════════════════════
-    // PLUGINS
-    // ═══════════════════════════════════════
     plugins: [
-      // ✅ FIX: Juste "expo-router" sans options
+      // ✅ Expo Router — NO OPTIONS
       "expo-router",
+
+      // ✅ Multimedia
       "expo-av",
       "expo-web-browser",
+
+      // ✅ Security & Auth
       "expo-local-authentication",
       "expo-secure-store",
 
+      // ✅ File Selection (Images & Audio)
+      [
+        "expo-document-picker",
+        {
+          iCloudContainerEnvironment: "Production"
+        }
+      ],
+
+      // ✅ Image Picker
       [
         "expo-image-picker",
         {
@@ -143,14 +178,17 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         }
       ],
 
+      // ✅ Media Library
       [
         "expo-media-library",
         {
           photosPermission:
-            "Autoriser RHAZN à sauvegarder des vidéos dans votre galerie."
+            "Autoriser RHAZN à sauvegarder des vidéos dans votre galerie.",
+          isAccessMediaLocationEnabled: true
         }
       ],
 
+      // ✅ Splash Screen
       [
         "expo-splash-screen",
         {
@@ -160,50 +198,78 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         }
       ],
 
+      // ✅ Build Properties — iOS 15.1 MINIMUM
       [
         "expo-build-properties",
         {
           android: {
             compileSdkVersion: 36,
             targetSdkVersion:  36,
-            minSdkVersion:     24
+            minSdkVersion:     24,
+            maxSdkVersion:     36,
+            usesCleartextTraffic: false
           },
           ios: {
-            useFrameworks: "static"
+            useFrameworks: "static",
+            deploymentTarget: "15.1"  // ✅ MINIMUM EXPO-BUILD-PROPERTIES
           }
+        }
+      ],
+
+      // ✅ File System (pour stockage audio)
+      [
+        "expo-file-system",
+        {
+          documentDirectory: true
         }
       ]
     ],
 
     // ═══════════════════════════════════════
-    // EXTRA
+    // EXTRA — Variables d'environnement
     // ═══════════════════════════════════════
     extra: {
       env:        ENV,
       appVersion: APP_VERSION,
 
-      // ✅ API sécurisée avec fallback
+      // ✅ API Backend
       apiUrl:
         process.env.EXPO_PUBLIC_API_URL ||
         "https://rhazn-backend-production.up.railway.app",
 
+      // ✅ Supabase
       supabaseUrl:     process.env.EXPO_PUBLIC_SUPABASE_URL,
       supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
 
+      // ✅ EAS
       eas: {
         projectId: "43ced0cc-a4aa-41e3-8784-0d5f5f1682e0"
       }
     },
 
     // ═══════════════════════════════════════
-    // STABILITY
+    // RUNTIME & UPDATES
     // ═══════════════════════════════════════
     runtimeVersion: {
       policy: "appVersion"
     },
 
     updates: {
-      fallbackToCacheTimeout: 0
-    }
+      url:                     "https://u.expo.dev/43ced0cc-a4aa-41e3-8784-0d5f5f1682e0",
+      enabled:                 true,
+      checkAutomatically:      "ON_LOAD",
+      fallbackToCacheTimeout:  0,
+      requestHeaders: {
+        "expo-channel-name": ENV
+      }
+    },
+
+    // ═══════════════════════════════════════
+    // PREMIUM FEATURES
+    // ═══════════════════════════════════════
+    privacy: "public",
+    description: "RHAZN — Plateforme créative haïtienne de partage vidéo",
+    homepage: "https://rhazn.org",
+    githubUrl: "https://github.com/rhazncontact-cmd/rhazn"
   };
 };

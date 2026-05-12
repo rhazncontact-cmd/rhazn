@@ -1,749 +1,561 @@
 /**
- * components/MusicDownloadModal.tsx
- * ✅ RHAZN — Télécharger les musiques exclusives
- * ✅ Télécharge les MP3 sur le téléphone (Documents)
- * ✅ Aperçu audio + état du téléchargement
- * ✅ Recherche par titre/artiste/genre
- * ✅ Charge les musiques depuis Supabase
+ * screens/MusicUploadScreen.tsx
+ * ✅ ADMIN UNIQUEMENT — Supreme peut uploader des musiques
+ * ✅ Upload MP3 à Supabase Storage
+ * ✅ Ajoute automatiquement à la table music_tracks
+ * ✅ Gère les métadonnées (titre, artiste, genre, durée)
  */
 
 import { Ionicons } from "@expo/vector-icons";
-import { Audio } from "expo-av";
+import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import * as Haptics from "expo-haptics";
-import { useEffect, useRef, useState } from "react";
+import { useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  AppState,
-  AppStateStatus,
-  FlatList,
-  Modal,
-  Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
 
 const C = {
-  bg:      "#000000",
-  card:    "#0E0E0E",
-  card2:   "#111111",
-  gold:    "#D4AF37",
-  goldDim: "rgba(212,175,55,0.12)",
-  goldBd:  "rgba(212,175,55,0.28)",
-  white:   "#FFFFFF",
-  gray:    "#9A9A9A",
-  muted:   "rgba(255,255,255,0.55)",
-  border:  "rgba(255,255,255,0.12)",
-  hairline:"rgba(255,255,255,0.07)",
-  ok:      "#34C759",
+  bg: "#0A0A0A",
+  card: "#141414",
+  gold: "#D4AF37",
+  white: "#FFF",
+  gray: "#666",
+  muted: "rgba(255,255,255,0.60)",
+  border: "rgba(255,255,255,0.10)",
+  hairline: "rgba(255,255,255,0.06)",
+  blue: "#007AFF",
+  ok: "#34C759",
+  danger: "#FF453A",
+  goldDim: "rgba(212,175,55,0.14)",
 };
 
-const fmtTime = (sec: number) => {
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-};
+type UploadState = "idle" | "uploading" | "done" | "error";
 
-export type MusicTrack = {
-  id:           string;
-  title:        string;
-  artist:       string;
-  duration_sec: number;
-  file_url:     string;
-  genre:        string | null;
-};
+export default function MusicUploadScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
 
-type DownloadState = {
-  [trackId: string]: {
-    status: "idle" | "downloading" | "done" | "error";
-    progress: number;
-    error?: string;
-  };
-};
+  // States
+  const [selectedFile, setSelectedFile] = useState<{
+    name: string;
+    uri: string;
+    mimeType: string;
+  } | null>(null);
 
-type Props = {
-  visible:  boolean;
-  onClose:  () => void;
-};
+  const [title, setTitle] = useState("");
+  const [artist, setArtist] = useState("RHAZN");
+  const [genre, setGenre] = useState("");
+  const [durationSec, setDurationSec] = useState("180");
+  const [isDownloadable, setIsDownloadable] = useState(false);
+  const [uploadState, setUploadState] = useState<UploadState>("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [isSupreme, setIsSupreme] = useState(false);
 
-export default function MusicDownloadModal({ visible, onClose }: Props) {
-  const [tracks,       setTracks]       = useState<MusicTrack[]>([]);
-  const [loading,      setLoading]      = useState(true);
-  const [search,       setSearch]       = useState("");
-  const [playingId,    setPlayingId]    = useState<string | null>(null);
-  const [downloadState, setDownloadState] = useState<DownloadState>({});
-
-  const soundRef     = useRef<Audio.Sound | null>(null);
-  const autoStopRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // ✅ Configurer le mode audio
+  // ✅ Vérifier que c'est l'admin
   useEffect(() => {
-    Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: false,
-    }).catch(() => {});
-  }, []);
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getUser();
+        const user = data?.user;
+        const email = user?.email?.toLowerCase() || "";
+        const isAdmin = email === "meyounbauniklovegodstory@gmail.com";
 
-  // ✅ Charger les musiques quand le modal s'ouvre
-  useEffect(() => {
-    if (visible) {
-      loadTracks();
-    } else {
-      killSound();
-    }
-  }, [visible]);
-
-  // ✅ Stop au changement d'AppState
-  useEffect(() => {
-    const handleAppState = (nextState: AppStateStatus) => {
-      if (nextState === "background" || nextState === "inactive") {
-        killSound();
+        if (!isAdmin) {
+          setError("🔒 Accès réservé aux administrateurs RHAZN");
+          setTimeout(() => {
+            router.replace("/");
+          }, 2000);
+        } else {
+          setIsSupreme(true);
+        }
+      } catch (e) {
+        console.error("Erreur vérification admin:", e);
+        router.replace("/");
       }
-    };
-    const sub = AppState.addEventListener("change", handleAppState);
-    return () => {
-      sub.remove();
-    };
+    })();
   }, []);
 
-  // ✅ Cleanup à la démo
-  useEffect(() => {
-    return () => {
-      killSound();
-    };
-  }, []);
-
-  const loadTracks = async () => {
-    setLoading(true);
+  // ✅ Choisir un fichier MP3
+  const pickAudioFile = async () => {
     try {
-      const { data, error } = await supabase
-        .from("music_tracks")
-        .select("id, title, artist, duration_sec, file_url, genre")
-        .eq("is_active", true)
-        .order("created_at", { ascending: false });
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "audio/*",
+        copyToCacheDirectory: true,
+      });
 
-      if (error) {
-        console.error("❌ Erreur chargement catalogue:", error);
-        setTracks([]);
-      } else {
-        setTracks((data ?? []) as MusicTrack[]);
+      if (!result.canceled && result.assets?.[0]) {
+        const asset = result.assets[0];
+        setSelectedFile({
+          name: asset.name || "audio.mp3",
+          uri: asset.uri,
+          mimeType: asset.mimeType || "audio/mpeg",
+        });
+        setError(null);
+        Haptics.selectionAsync().catch(() => {});
       }
     } catch (e) {
-      console.error("❌ Erreur chargement catalogue:", e);
-      setTracks([]);
-    }
-    setLoading(false);
-  };
-
-  const killSound = () => {
-    if (autoStopRef.current) {
-      clearTimeout(autoStopRef.current);
-      autoStopRef.current = null;
-    }
-    const s = soundRef.current;
-    soundRef.current = null;
-    setPlayingId(null);
-    if (s) {
-      s.stopAsync().catch(() => {});
-      s.unloadAsync().catch(() => {});
+      console.error("Erreur picking audio:", e);
+      setError("❌ Erreur sélection du fichier");
     }
   };
 
-  const togglePreview = async (track: MusicTrack) => {
-    if (playingId === track.id) {
-      killSound();
+  // ✅ UPLOADER LA MUSIQUE
+  const uploadMusic = async () => {
+    if (!selectedFile || !title.trim() || !artist.trim()) {
+      setError("❌ Remplissez titre, artiste et sélectionnez un fichier");
       return;
     }
 
-    killSound();
-
     try {
-      Haptics.selectionAsync().catch(() => {});
-
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: track.file_url },
-        {
-          shouldPlay: true,
-          progressUpdateIntervalMillis: 500,
-        },
-        null,
-        true
-      );
-
-      if (soundRef.current !== null) {
-        sound.stopAsync().catch(() => {});
-        sound.unloadAsync().catch(() => {});
-        return;
-      }
-
-      soundRef.current = sound;
-      setPlayingId(track.id);
-
-      // ✅ Auto-stop après 30 secondes
-      autoStopRef.current = setTimeout(() => {
-        if (soundRef.current === sound) killSound();
-      }, 30_000);
-
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          if (soundRef.current === sound) killSound();
-        }
-      });
-
-    } catch (e) {
-      console.warn("❌ Erreur preview:", e);
-      killSound();
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-    }
-  };
-
-  // ✅ TÉLÉCHARGER LA MUSIQUE
-  const downloadMusic = async (track: MusicTrack) => {
-    try {
-      setDownloadState((prev) => ({
-        ...prev,
-        [track.id]: { status: "downloading", progress: 0 },
-      }));
-
+      setUploadState("uploading");
+      setError(null);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 
-      // ✅ Créer le chemin de destination
-      const docDir = FileSystem.documentDirectory ?? "";
-      const fileName = `${track.title.replace(/[^a-z0-9]/gi, "_")}_${track.id.slice(0, 8)}.mp3`;
-      const filePath = `${docDir}${fileName}`;
+      // ✅ ÉTAPE 1: Lire le fichier
+      const fileContent = await FileSystem.readAsStringAsync(selectedFile.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
 
-      // ✅ Télécharger le fichier
-      const downloadResult = await FileSystem.downloadAsync(
-        track.file_url,
-        filePath,
-        {
-          progressCallback: (progress) => {
-            const percent = Math.round(
-              (progress.totalBytesSent / progress.totalBytesExpectedToSend) * 100
-            );
-            setDownloadState((prev) => ({
-              ...prev,
-              [track.id]: { status: "downloading", progress: percent },
-            }));
+      // ✅ ÉTAPE 2: Upload à Supabase Storage
+      const fileName = `${title.replace(/\s+/g, "_")}_${Date.now()}.mp3`;
+      const storagePath = `music/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("music")
+        .upload(storagePath, Buffer.from(fileContent, "base64"), {
+          contentType: "audio/mpeg",
+          upsert: false,
+        });
+
+      if (uploadError) throw uploadError;
+
+      // ✅ ÉTAPE 3: Obtenir l'URL publique
+      const { data } = supabase.storage
+        .from("music")
+        .getPublicUrl(storagePath);
+
+      if (!data?.publicUrl) throw new Error("URL publique non trouvée");
+
+      // ✅ ÉTAPE 4: Ajouter à la BD
+      const { data: dbData, error: dbError } = await supabase
+        .from("music_tracks")
+        .insert([
+          {
+            title: title.trim(),
+            artist: artist.trim(),
+            duration_sec: parseInt(durationSec) || 180,
+            file_url: data.publicUrl,
+            file_path: storagePath,
+            genre: genre.trim() || null,
+            is_downloadable: isDownloadable,
+            is_active: true,
           },
-        }
-      );
+        ])
+        .select();
 
-      if (downloadResult.status === 200) {
-        console.log("✅ Musique téléchargée:", fileName);
-        setDownloadState((prev) => ({
-          ...prev,
-          [track.id]: { status: "done", progress: 100 },
-        }));
+      if (dbError) throw dbError;
 
-        Haptics.notificationAsync(
-          Haptics.NotificationFeedbackType.Success
-        ).catch(() => {});
+      console.log("✅ Musique uploadée avec succès:", dbData);
 
-        // ✅ Auto-reset après 3 secondes
-        setTimeout(() => {
-          setDownloadState((prev) => ({
-            ...prev,
-            [track.id]: { status: "idle", progress: 0 },
-          }));
-        }, 3000);
+      // ✅ Succès!
+      setUploadState("done");
+      Haptics.notificationAsync(
+        Haptics.NotificationFeedbackType.Success
+      ).catch(() => {});
 
-      } else {
-        throw new Error("Erreur téléchargement");
-      }
-
-    } catch (error: any) {
-      console.error("❌ Erreur téléchargement:", error);
-      setDownloadState((prev) => ({
-        ...prev,
-        [track.id]: {
-          status: "error",
-          progress: 0,
-          error: error.message || "Erreur inconnue",
-        },
-      }));
-
+      // Reset après 2 secondes
+      setTimeout(() => {
+        setSelectedFile(null);
+        setTitle("");
+        setArtist("RHAZN");
+        setGenre("");
+        setDurationSec("180");
+        setIsDownloadable(false);
+        setUploadState("idle");
+      }, 2000);
+    } catch (e: any) {
+      console.error("❌ Erreur upload:", e);
+      setUploadState("error");
+      setError(`❌ ${e?.message || "Erreur lors de l'upload"}`);
       Haptics.notificationAsync(
         Haptics.NotificationFeedbackType.Error
       ).catch(() => {});
-
-      setTimeout(() => {
-        setDownloadState((prev) => ({
-          ...prev,
-          [track.id]: { status: "idle", progress: 0 },
-        }));
-      }, 3000);
     }
   };
 
-  const filtered = tracks.filter((t) => {
-    const q = search.trim().toLowerCase();
-    if (!q) return true;
+  if (!isSupreme) {
     return (
-      t.title.toLowerCase().includes(q) ||
-      t.artist.toLowerCase().includes(q) ||
-      (t.genre ?? "").toLowerCase().includes(q)
+      <View style={s.container}>
+        <Text style={s.errorText}>Accès réservé aux administrateurs...</Text>
+      </View>
     );
-  });
+  }
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
+    <View
+      style={[
+        s.container,
+        { paddingTop: insets.top, paddingBottom: insets.bottom },
+      ]}
     >
-      <View style={m.overlay}>
-        <Pressable style={m.backdrop} onPress={onClose} />
-        <View style={m.sheet}>
-
-          {/* Handle */}
-          <View style={m.handle} />
-
-          {/* Header */}
-          <View style={m.header}>
-            <View style={m.headerLeft}>
-              <View style={m.iconWrap}>
-                <Ionicons name="download" size={18} color={C.gold} />
-              </View>
-              <View>
-                <Text style={m.headerTitle}>Musiques RHAZN</Text>
-                <Text style={m.headerSub}>
-                  {filtered.length} piste{filtered.length > 1 ? "s" : ""} exclusive{filtered.length > 1 ? "s" : ""}
-                </Text>
-              </View>
+      <ScrollView
+        contentContainerStyle={s.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header */}
+        <View style={s.header}>
+          <View style={s.headerLeft}>
+            <View style={s.iconBg}>
+              <Ionicons name="cloud-upload" size={24} color={C.gold} />
             </View>
-            <Pressable
-              onPress={onClose}
-              style={({ pressed }) => [
-                m.closeBtn,
-                pressed && { opacity: 0.7 },
+            <View>
+              <Text style={s.headerTitle}>Ajouter Musique</Text>
+              <Text style={s.headerSub}>Admin RHAZN</Text>
+            </View>
+          </View>
+          <TouchableOpacity onPress={() => router.back()}>
+            <Ionicons name="close" size={24} color={C.white} />
+          </TouchableOpacity>
+        </View>
+
+        {/* File Picker */}
+        <TouchableOpacity
+          onPress={pickAudioFile}
+          style={[s.filePickerBtn, selectedFile && s.filePickerBtnActive]}
+        >
+          <View style={s.filePickerIcon}>
+            <Ionicons
+              name={selectedFile ? "checkmark-circle" : "musical-notes"}
+              size={32}
+              color={C.gold}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.filePickerTitle}>
+              {selectedFile ? "✅ Fichier sélectionné" : "Sélectionner MP3"}
+            </Text>
+            <Text style={s.filePickerSub}>
+              {selectedFile ? selectedFile.name : "Appuyez pour choisir"}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={C.gray} />
+        </TouchableOpacity>
+
+        {/* Formulaire */}
+        <View style={s.form}>
+          <View style={s.formGroup}>
+            <Text style={s.label}>Titre *</Text>
+            <TextInput
+              placeholder="Ex: Ban Mea"
+              placeholderTextColor={C.gray}
+              style={s.input}
+              value={title}
+              onChangeText={setTitle}
+              maxLength={100}
+            />
+          </View>
+
+          <View style={s.formGroup}>
+            <Text style={s.label}>Artiste *</Text>
+            <TextInput
+              placeholder="Ex: RHAZN"
+              placeholderTextColor={C.gray}
+              style={s.input}
+              value={artist}
+              onChangeText={setArtist}
+              maxLength={100}
+            />
+          </View>
+
+          <View style={s.formGroup}>
+            <Text style={s.label}>Genre</Text>
+            <TextInput
+              placeholder="Ex: Afrobeat"
+              placeholderTextColor={C.gray}
+              style={s.input}
+              value={genre}
+              onChangeText={setGenre}
+              maxLength={50}
+            />
+          </View>
+
+          <View style={s.formGroup}>
+            <Text style={s.label}>Durée (secondes)</Text>
+            <TextInput
+              placeholder="180"
+              placeholderTextColor={C.gray}
+              style={s.input}
+              value={durationSec}
+              onChangeText={setDurationSec}
+              keyboardType="number-pad"
+              maxLength={4}
+            />
+          </View>
+
+          {/* Téléchargeable? */}
+          <View style={s.downloadableRow}>
+            <View>
+              <Text style={s.label}>Téléchargeable?</Text>
+              <Text style={s.sublabel}>Les utilisateurs peuvent télécharger</Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setIsDownloadable(!isDownloadable)}
+              style={[
+                s.toggleBtn,
+                isDownloadable && s.toggleBtnActive,
               ]}
             >
-              <Ionicons name="close" size={18} color={C.muted} />
-            </Pressable>
+              {isDownloadable && (
+                <Ionicons name="checkmark" size={16} color="#000" />
+              )}
+            </TouchableOpacity>
           </View>
-
-          {/* Recherche */}
-          <View style={m.searchWrap}>
-            <Ionicons name="search-outline" size={15} color={C.gray} />
-            <TextInput
-              placeholder="Rechercher titre, artiste, genre…"
-              placeholderTextColor={C.gray}
-              style={m.searchInput}
-              value={search}
-              onChangeText={setSearch}
-              autoCorrect={false}
-              autoCapitalize="none"
-            />
-            {search.length > 0 && (
-              <Pressable onPress={() => setSearch("")}>
-                <Ionicons name="close-circle" size={15} color={C.gray} />
-              </Pressable>
-            )}
-          </View>
-
-          {/* Liste */}
-          {loading ? (
-            <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12 }}>
-              <ActivityIndicator color={C.gold} size="large" />
-              <Text style={{ color: C.gray, fontWeight: "700" }}>
-                Chargement du catalogue…
-              </Text>
-            </View>
-          ) : filtered.length === 0 ? (
-            <View
-              style={{
-                flex: 1,
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 12,
-                paddingHorizontal: 40,
-              }}
-            >
-              <View style={m.emptyIcon}>
-                <Ionicons
-                  name="musical-notes-outline"
-                  size={32}
-                  color={C.gold}
-                />
-              </View>
-              <Text style={{ color: C.white, fontWeight: "900", fontSize: 16 }}>
-                {search ? "Aucun résultat" : "Catalogue vide"}
-              </Text>
-              <Text
-                style={{
-                  color: C.muted,
-                  fontWeight: "600",
-                  fontSize: 13,
-                  textAlign: "center",
-                  lineHeight: 19,
-                }}
-              >
-                {search
-                  ? `Aucune piste ne correspond à "${search}"`
-                  : "L'administrateur RHAZN n'a pas encore ajouté de pistes musicales."}
-              </Text>
-            </View>
-          ) : (
-            <FlatList
-              data={filtered}
-              keyExtractor={(t) => t.id}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 40, paddingTop: 4 }}
-              ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
-              renderItem={({ item }) => {
-                const state = downloadState[item.id] ?? {
-                  status: "idle",
-                  progress: 0,
-                };
-                const isPlaying = playingId === item.id;
-                const isDownloading = state.status === "downloading";
-                const isDone = state.status === "done";
-                const isError = state.status === "error";
-
-                return (
-                  <View style={m.trackCard}>
-
-                    {/* Bouton preview */}
-                    <Pressable
-                      onPress={() => togglePreview(item)}
-                      disabled={isDownloading}
-                      style={({ pressed }) => [
-                        m.previewBtn,
-                        isPlaying && m.previewBtnActive,
-                        pressed && !isDownloading && { opacity: 0.8 },
-                      ]}
-                    >
-                      <Ionicons
-                        name={isPlaying ? "pause" : "play"}
-                        size={16}
-                        color={isPlaying ? "#000" : C.gold}
-                      />
-                    </Pressable>
-
-                    {/* Infos */}
-                    <View style={{ flex: 1 }}>
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "center",
-                          gap: 6,
-                        }}
-                      >
-                        <Text
-                          style={m.trackTitle}
-                          numberOfLines={1}
-                        >
-                          {item.title}
-                        </Text>
-                      </View>
-                      <Text style={m.trackMeta}>
-                        {item.artist}
-                        {item.genre ? ` · ${item.genre}` : ""}
-                        {item.duration_sec > 0
-                          ? ` · ${fmtTime(item.duration_sec)}`
-                          : ""}
-                      </Text>
-
-                      {isPlaying && (
-                        <View style={m.waveRow}>
-                          {[1, 2, 3, 4, 5, 4, 3, 2, 1].map((h, i) => (
-                            <View
-                              key={i}
-                              style={[
-                                m.waveLine,
-                                { height: h * 3 },
-                              ]}
-                            />
-                          ))}
-                          <Text style={m.playingTxt}>
-                            Écoute en cours…
-                          </Text>
-                        </View>
-                      )}
-
-                      {isDownloading && (
-                        <View style={m.progressBar}>
-                          <View
-                            style={[
-                              m.progressFill,
-                              { width: `${state.progress}%` },
-                            ]}
-                          />
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Bouton télécharger */}
-                    <Pressable
-                      disabled={isDownloading}
-                      onPress={() => downloadMusic(item)}
-                      style={({ pressed }) => [
-                        m.downloadBtn,
-                        isDone && m.downloadBtnDone,
-                        isError && m.downloadBtnError,
-                        pressed && !isDownloading && { opacity: 0.8 },
-                      ]}
-                    >
-                      {isDownloading ? (
-                        <ActivityIndicator color={C.gold} size={14} />
-                      ) : isDone ? (
-                        <>
-                          <Ionicons
-                            name="checkmark-circle"
-                            size={14}
-                            color={C.ok}
-                          />
-                          <Text style={m.downloadBtnTxtDone}>
-                            Fait
-                          </Text>
-                        </>
-                      ) : isError ? (
-                        <>
-                          <Ionicons
-                            name="alert-circle"
-                            size={14}
-                            color="#FF3B30"
-                          />
-                          <Text style={m.downloadBtnTxtError}>
-                            Erreur
-                          </Text>
-                        </>
-                      ) : (
-                        <>
-                          <Ionicons
-                            name="cloud-download"
-                            size={14}
-                            color={C.gold}
-                          />
-                          <Text style={m.downloadBtnTxt}>
-                            Télécharger
-                          </Text>
-                        </>
-                      )}
-                    </Pressable>
-                  </View>
-                );
-              }}
-            />
-          )}
         </View>
-      </View>
-    </Modal>
+
+        {/* Error Message */}
+        {error && (
+          <View style={s.errorBox}>
+            <Ionicons name="alert-circle" size={16} color={C.danger} />
+            <Text style={s.errorBoxText}>{error}</Text>
+          </View>
+        )}
+
+        {/* Upload Button */}
+        <TouchableOpacity
+          onPress={uploadMusic}
+          disabled={uploadState === "uploading" || !selectedFile}
+          style={[
+            s.uploadBtn,
+            uploadState === "uploading" && s.uploadBtnLoading,
+            (uploadState === "uploading" || !selectedFile) && { opacity: 0.6 },
+          ]}
+        >
+          {uploadState === "uploading" ? (
+            <>
+              <ActivityIndicator color="#000" />
+              <Text style={s.uploadBtnText}>Upload en cours...</Text>
+            </>
+          ) : uploadState === "done" ? (
+            <>
+              <Ionicons name="checkmark-circle" size={20} color="#000" />
+              <Text style={s.uploadBtnText}>✅ Ajoutée!</Text>
+            </>
+          ) : (
+            <>
+              <Ionicons name="cloud-upload" size={20} color="#000" />
+              <Text style={s.uploadBtnText}>Ajouter la musique</Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        {/* Info Box */}
+        <View style={s.infoBox}>
+          <Ionicons name="information-circle" size={14} color={C.blue} />
+          <Text style={s.infoBoxText}>
+            La musique sera accessible dans le catalogue RHAZN pour tous les utilisateurs
+          </Text>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
-const m = StyleSheet.create({
-  overlay: {
+const s = StyleSheet.create({
+  container: {
     flex: 1,
-    justifyContent: "flex-end",
+    backgroundColor: C.bg,
   },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.65)",
-  },
-  sheet: {
-    backgroundColor: "#0A0A0A",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 18,
-    paddingTop: 10,
-    paddingBottom: 0,
-    height: "85%",
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.10)",
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "rgba(255,255,255,0.20)",
-    alignSelf: "center",
-    marginBottom: 16,
+  content: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    gap: 20,
   },
 
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 14,
   },
   headerLeft: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 12,
   },
-  iconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 11,
+  iconBg: {
+    width: 50,
+    height: 50,
+    borderRadius: 14,
     backgroundColor: C.goldDim,
     borderWidth: 1,
-    borderColor: C.goldBd,
+    borderColor: "rgba(212,175,55,0.35)",
     alignItems: "center",
     justifyContent: "center",
   },
   headerTitle: {
     color: C.white,
+    fontSize: 18,
     fontWeight: "900",
-    fontSize: 17,
   },
   headerSub: {
-    color: C.gray,
-    fontWeight: "600",
+    color: C.muted,
     fontSize: 11,
-    marginTop: 1,
-  },
-  closeBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.06)",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
+    marginTop: 2,
   },
 
-  searchWrap: {
+  filePickerBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    backgroundColor: "#111",
+    gap: 14,
+    backgroundColor: C.card,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: C.hairline,
+  },
+  filePickerBtnActive: {
+    borderColor: C.gold,
+    backgroundColor: "rgba(212,175,55,0.08)",
+  },
+  filePickerIcon: {
+    width: 56,
+    height: 56,
     borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
-    marginBottom: 12,
-  },
-  searchInput: {
-    flex: 1,
-    color: C.white,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-
-  emptyIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 22,
     backgroundColor: C.goldDim,
     borderWidth: 1,
-    borderColor: C.goldBd,
+    borderColor: "rgba(212,175,55,0.35)",
     alignItems: "center",
     justifyContent: "center",
   },
+  filePickerTitle: {
+    color: C.white,
+    fontWeight: "900",
+    fontSize: 14,
+  },
+  filePickerSub: {
+    color: C.muted,
+    fontSize: 11,
+    marginTop: 2,
+  },
 
-  trackCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: "#0E0E0E",
-    borderRadius: 16,
+  form: {
+    gap: 14,
+  },
+  formGroup: {
+    gap: 6,
+  },
+  label: {
+    color: C.white,
+    fontWeight: "700",
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  sublabel: {
+    color: C.muted,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  input: {
+    backgroundColor: "#111",
+    color: C.white,
+    borderRadius: 12,
     padding: 12,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: C.border,
+    fontSize: 14,
   },
 
-  previewBtn: {
-    width: 40,
-    height: 40,
+  downloadableRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: C.card,
     borderRadius: 12,
-    backgroundColor: C.goldDim,
+    padding: 14,
     borderWidth: 1,
-    borderColor: C.goldBd,
+    borderColor: C.hairline,
+  },
+  toggleBtn: {
+    width: 50,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.10)",
+    borderWidth: 1,
+    borderColor: C.border,
     alignItems: "center",
     justifyContent: "center",
-    flexShrink: 0,
   },
-  previewBtnActive: {
+  toggleBtnActive: {
     backgroundColor: C.gold,
     borderColor: C.gold,
   },
 
-  trackTitle: {
-    color: C.white,
-    fontWeight: "800",
-    fontSize: 14,
+  errorBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "rgba(255,59,48,0.12)",
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,59,48,0.35)",
+  },
+  errorBoxText: {
+    color: C.danger,
+    fontWeight: "600",
+    fontSize: 12,
     flex: 1,
   },
-  trackMeta: {
-    color: C.gray,
-    fontWeight: "600",
-    fontSize: 11,
-    marginTop: 3,
-  },
 
-  waveRow: {
+  uploadBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 3,
-    marginTop: 5,
-  },
-  waveLine: {
-    width: 3,
+    justifyContent: "center",
+    gap: 10,
     backgroundColor: C.gold,
-    borderRadius: 2,
+    borderRadius: 14,
+    paddingVertical: 14,
   },
-  playingTxt: {
-    color: C.gold,
-    fontWeight: "700",
-    fontSize: 10,
-    marginLeft: 4,
+  uploadBtnLoading: {
+    opacity: 0.8,
+  },
+  uploadBtnText: {
+    color: "#000",
+    fontWeight: "900",
+    fontSize: 16,
   },
 
-  progressBar: {
-    height: 4,
-    backgroundColor: "rgba(212,175,55,0.2)",
-    borderRadius: 2,
-    marginTop: 6,
-    overflow: "hidden",
-  },
-  progressFill: {
-    height: "100%",
-    backgroundColor: C.gold,
-    borderRadius: 2,
-  },
-
-  downloadBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+  infoBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "rgba(0,122,255,0.08)",
     borderRadius: 12,
-    backgroundColor: "rgba(212,175,55,0.12)",
+    padding: 12,
     borderWidth: 1,
-    borderColor: C.goldBd,
-    flexShrink: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
+    borderColor: "rgba(0,122,255,0.25)",
   },
-  downloadBtnDone: {
-    backgroundColor: "rgba(52,199,89,0.12)",
-    borderColor: "rgba(52,199,89,0.28)",
+  infoBoxText: {
+    color: C.blue,
+    fontWeight: "600",
+    fontSize: 12,
+    flex: 1,
   },
-  downloadBtnError: {
-    backgroundColor: "rgba(255,59,48,0.12)",
-    borderColor: "rgba(255,59,48,0.28)",
-  },
-  downloadBtnTxt: {
-    color: C.gold,
-    fontWeight: "900",
-    fontSize: 11,
-  },
-  downloadBtnTxtDone: {
-    color: C.ok,
-    fontWeight: "900",
-    fontSize: 11,
-  },
-  downloadBtnTxtError: {
-    color: "#FF3B30",
-    fontWeight: "900",
-    fontSize: 11,
+
+  errorText: {
+    color: C.muted,
+    textAlign: "center",
+    paddingTop: 100,
+    fontSize: 14,
   },
 });

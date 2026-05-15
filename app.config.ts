@@ -102,9 +102,9 @@ export default (): ExpoConfig => {
       },
     },
     // ✅ Changé de "appVersion" à "nativeVersion" (conforme Expo)
-    runtimeVersion: {
-      policy: "nativeVersion",
-    },
+    rruntimeVersion: {
+  policy: "appVersion",  // ✅ CORRECT
+},
     updates: {
       enabled: true,
       checkAutomatically: "ON_LOAD",

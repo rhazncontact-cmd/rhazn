@@ -65,3 +65,9 @@ yarn-error.log*
 # =========================
 *.orig.*
 app-example
+
+# Build artifacts
+build-*.aab
+*.apk
+*.jks
+.eas/

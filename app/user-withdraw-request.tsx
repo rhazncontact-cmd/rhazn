@@ -1,8 +1,8 @@
 // app/user-withdraw-request.tsx
 // ✅ RHAZN — Retrait TAN • Apple-like Premium Redesign
-// ✅ Toute la logique préservée (ZERO débit wallet ici)
-// ✅ Alertes système réorganisées : toast entrant + bottom-sheet confirmation
-// ✅ Design : fond noir, cards glassmorphism, or RHAZN
+// ✅ CORRECTIONS :
+//    - insert type='WITHDRAW' pour séparer des demandes d'achat (type='BUY')
+//    - Validation solde : bloque même si walletBalance === 0
 
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -49,20 +49,20 @@ const C = {
 };
 
 const GOLD = C.gold;
-const WITHDRAW_MIN = 150;
-const WITHDRAW_MAX = 25_000;
+const WITHDRAW_MIN     = 150;
+const WITHDRAW_MAX     = 25_000;
 const AGENT_FEE_RATE   = 0.05;
 const SUPREME_FEE_RATE = 0.15;
 
 // ─────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────
-const fmt    = (n: number) => Number(n || 0).toLocaleString("fr-FR");
-const digits = (s: string) => (s || "").replace(/[^\d]/g, "").replace(/^0+(?=\d)/, "");
+const fmt      = (n: number) => Number(n || 0).toLocaleString("fr-FR");
+const digits   = (s: string) => (s || "").replace(/[^\d]/g, "").replace(/^0+(?=\d)/, "");
 const fmtInput = (d: string) => d ? Number(d).toLocaleString("fr-FR") : "";
 
 // ─────────────────────────────────────────────────────────────
-// TOAST HOOK — 3 types : success / error / warning
+// TOAST HOOK
 // ─────────────────────────────────────────────────────────────
 type ToastKind = "success" | "error" | "warning" | "info";
 
@@ -145,7 +145,6 @@ function SuccessModal({ visible, tan, htg, onClose }: { visible: boolean; tan: n
     <Modal transparent animationType="none" visible={visible} onRequestClose={onClose}>
       <View style={sm.overlay}>
         <Animated.View style={[sm.card, { opacity: op, transform: [{ scale }] }]}>
-          {/* Icône succès */}
           <View style={sm.iconWrap}>
             <Ionicons name="checkmark-circle" size={52} color={C.green} />
           </View>
@@ -175,24 +174,24 @@ function SuccessModal({ visible, tan, htg, onClose }: { visible: boolean; tan: n
 }
 
 const sm = StyleSheet.create({
-  overlay:     { flex: 1, backgroundColor: "rgba(0,0,0,0.65)", alignItems: "center", justifyContent: "center" },
-  card:        { width: "85%", maxWidth: 360, backgroundColor: C.card, borderRadius: 28, padding: 28, alignItems: "center", borderWidth: 1, borderColor: C.border, shadowColor: "#000", shadowOpacity: 0.4, shadowRadius: 40, shadowOffset: { width: 0, height: 20 }, elevation: 30 },
-  iconWrap:    { width: 80, height: 80, borderRadius: 40, backgroundColor: C.greenDim, borderWidth: 1.5, borderColor: C.greenBorder, alignItems: "center", justifyContent: "center", marginBottom: 16 },
-  title:       { color: C.white, fontSize: 20, fontWeight: "900", textAlign: "center" },
-  sub:         { color: C.muted, fontSize: 13, fontWeight: "600", textAlign: "center", marginTop: 6, lineHeight: 19 },
-  divider:     { width: "100%", height: 1, backgroundColor: C.hairline, marginVertical: 20 },
-  amountRow:   { flexDirection: "row", width: "100%" },
-  amountBlock: { flex: 1, alignItems: "center", gap: 3 },
-  amountSep:   { width: 1, backgroundColor: C.hairline, marginHorizontal: 12 },
-  amountLabel: { color: C.muted, fontSize: 10, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5 },
-  amountValue: { color: C.white, fontSize: 22, fontWeight: "900" },
+  overlay:        { flex: 1, backgroundColor: "rgba(0,0,0,0.65)", alignItems: "center", justifyContent: "center" },
+  card:           { width: "85%", maxWidth: 360, backgroundColor: C.card, borderRadius: 28, padding: 28, alignItems: "center", borderWidth: 1, borderColor: C.border, shadowColor: "#000", shadowOpacity: 0.4, shadowRadius: 40, shadowOffset: { width: 0, height: 20 }, elevation: 30 },
+  iconWrap:       { width: 80, height: 80, borderRadius: 40, backgroundColor: C.greenDim, borderWidth: 1.5, borderColor: C.greenBorder, alignItems: "center", justifyContent: "center", marginBottom: 16 },
+  title:          { color: C.white, fontSize: 20, fontWeight: "900", textAlign: "center" },
+  sub:            { color: C.muted, fontSize: 13, fontWeight: "600", textAlign: "center", marginTop: 6, lineHeight: 19 },
+  divider:        { width: "100%", height: 1, backgroundColor: C.hairline, marginVertical: 20 },
+  amountRow:      { flexDirection: "row", width: "100%" },
+  amountBlock:    { flex: 1, alignItems: "center", gap: 3 },
+  amountSep:      { width: 1, backgroundColor: C.hairline, marginHorizontal: 12 },
+  amountLabel:    { color: C.muted, fontSize: 10, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5 },
+  amountValue:    { color: C.white, fontSize: 22, fontWeight: "900" },
   amountCurrency: { color: C.muted, fontSize: 11, fontWeight: "700" },
-  btn:         { marginTop: 24, width: "100%", backgroundColor: C.gold, borderRadius: 18, paddingVertical: 16, alignItems: "center", shadowColor: C.gold, shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 8 },
-  btnTxt:      { color: "#000", fontWeight: "900", fontSize: 16 },
+  btn:            { marginTop: 24, width: "100%", backgroundColor: C.gold, borderRadius: 18, paddingVertical: 16, alignItems: "center", shadowColor: C.gold, shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 8 },
+  btnTxt:         { color: "#000", fontWeight: "900", fontSize: 16 },
 });
 
 // ─────────────────────────────────────────────────────────────
-// ROW COMPOSANT — ligne wallet preview
+// ROW COMPOSANT
 // ─────────────────────────────────────────────────────────────
 function WalletRow({ label, value, gold, strong }: { label: string; value: string; gold?: boolean; strong?: boolean }) {
   return (
@@ -223,11 +222,12 @@ export default function UserWithdrawRequest() {
   const ed_id   = typeof params.ed_id   === "string" ? params.ed_id   : null;
   const ed_code = typeof params.ed_code === "string" ? params.ed_code : null;
 
-  const [amountDigits, setAmountDigits] = useState("");
-  const [amountUi,     setAmountUi]     = useState("");
-  const [sending,      setSending]      = useState(false);
-  const [successVisible, setSuccessVisible] = useState(false);
-  const [walletBalance, setWalletBalance]   = useState(0);
+  const [amountDigits,    setAmountDigits]    = useState("");
+  const [amountUi,        setAmountUi]        = useState("");
+  const [sending,         setSending]         = useState(false);
+  const [successVisible,  setSuccessVisible]  = useState(false);
+  const [walletBalance,   setWalletBalance]   = useState(0);
+  const [balanceLoaded,   setBalanceLoaded]   = useState(false);
 
   // ── Charger wallet ──
   useEffect(() => {
@@ -236,6 +236,7 @@ export default function UserWithdrawRequest() {
       if (!data?.user) return;
       const { data: w } = await supabase.from("wallets").select("tan_balance").eq("user_id", data.user.id).single();
       setWalletBalance(Number(w?.tan_balance ?? 0));
+      setBalanceLoaded(true);
     })();
   }, []);
 
@@ -258,6 +259,10 @@ export default function UserWithdrawRequest() {
   const debitTotal = requested + feeTotal;
   const futureBalance = Math.max(walletBalance - debitTotal, 0);
   const cashHTG    = Math.floor(requested * 10);
+
+  // ✅ CORRECTION : insuffisantBalance couvre aussi le cas walletBalance === 0
+  const insuffisantBalance = balanceLoaded && debitTotal > walletBalance;
+
   const showPreview = requested > 0 && !belowMin && !aboveMax;
 
   // ── Soumettre ──
@@ -270,7 +275,8 @@ export default function UserWithdrawRequest() {
       toast.show("error", "Montant invalide", `Minimum ${fmt(WITHDRAW_MIN)} TAN • Maximum ${fmt(WITHDRAW_MAX)} TAN`);
       return;
     }
-    if (walletBalance > 0 && debitTotal > walletBalance) {
+    // ✅ CORRECTION : bloque si solde insuffisant, même si walletBalance === 0
+    if (insuffisantBalance) {
       toast.show("error", "Solde insuffisant", `Solde actuel : ${fmt(walletBalance)} TAN — Débit estimé : ${fmt(debitTotal)} TAN`);
       return;
     }
@@ -283,8 +289,15 @@ export default function UserWithdrawRequest() {
         toast.show("error", "Agent inactif", "Choisissez un autre agent.");
         return;
       }
+
+      // ✅ CORRECTION : type='WITHDRAW' pour séparer des demandes d'achat (type='BUY')
       const { error } = await supabase.from("user_withdraw_requests").insert({
-        user_uid: authData.user.id, ed_id, amount_tan: requested, status: "PENDING", note: null,
+        user_uid:   authData.user.id,
+        ed_id,
+        amount_tan: requested,
+        status:     "PENDING",
+        type:       "WITHDRAW",
+        note:       null,
       });
       if (error) { toast.show("error", "Erreur système", error.message); return; }
       setSuccessVisible(true);
@@ -293,10 +306,12 @@ export default function UserWithdrawRequest() {
     }
   };
 
+  // ── Bouton désactivé si solde insuffisant ou montant invalide ──
+  const submitDisabled = invalid || sending || insuffisantBalance;
+
   return (
     <SafeAreaView style={s.screen} edges={["top"]}>
 
-      {/* ── Toast ── */}
       {toast.node}
 
       {/* ── Header fixe ── */}
@@ -308,7 +323,6 @@ export default function UserWithdrawRequest() {
           <Text style={s.headerTitle}>Retrait TAN</Text>
           <Text style={s.headerSub}>Présentiel • Validation Agent</Text>
         </View>
-        {/* Badge solde */}
         <View style={s.balanceBadge}>
           <Text style={s.balanceValue}>{fmt(walletBalance)}</Text>
           <Text style={s.balanceCurrency}>TAN</Text>
@@ -393,10 +407,19 @@ export default function UserWithdrawRequest() {
                 <Text style={[s.alertTxt, { color: C.red }]}>Montant supérieur au maximum autorisé</Text>
               </View>
             )}
+            {/* ✅ Alerte solde insuffisant affichée en temps réel */}
+            {showPreview && insuffisantBalance && (
+              <View style={[s.alertBanner, { borderColor: C.redBorder, backgroundColor: C.redDim, marginTop: 8 }]}>
+                <Ionicons name="alert-circle" size={14} color={C.red} />
+                <Text style={[s.alertTxt, { color: C.red }]}>
+                  Solde insuffisant — vous avez {fmt(walletBalance)} TAN, débit estimé : {fmt(debitTotal)} TAN
+                </Text>
+              </View>
+            )}
           </View>
 
-          {/* ── Card HTG Preview (sticky visuel) ── */}
-          {showPreview && (
+          {/* ── Card HTG Preview ── */}
+          {showPreview && !insuffisantBalance && (
             <View style={[s.htgCard]}>
               <View style={s.htgTop}>
                 <Text style={s.htgLabel}>Vous recevrez en cash</Text>
@@ -408,7 +431,7 @@ export default function UserWithdrawRequest() {
           )}
 
           {/* ── Card Aperçu wallet ── */}
-          {showPreview && (
+          {showPreview && !insuffisantBalance && (
             <View style={[s.card, { marginTop: 12 }]}>
               <View style={s.cardTitleRow}>
                 <View style={s.cardIconWrap}>
@@ -435,9 +458,9 @@ export default function UserWithdrawRequest() {
 
           {/* ── Bouton envoi ── */}
           <TouchableOpacity
-            style={[s.submitBtn, (invalid || sending) && { opacity: 0.45 }]}
+            style={[s.submitBtn, submitDisabled && { opacity: 0.45 }]}
             onPress={submit}
-            disabled={invalid || sending}
+            disabled={submitDisabled}
             activeOpacity={0.88}
           >
             {sending
@@ -475,22 +498,19 @@ export default function UserWithdrawRequest() {
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.bg },
 
-  // Header
-  header:        { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, gap: 10, borderBottomWidth: 1, borderBottomColor: C.hairline },
-  backBtn:       { width: 40, height: 40, borderRadius: 13, backgroundColor: C.glass, borderWidth: 1, borderColor: C.border, alignItems: "center", justifyContent: "center" },
-  headerTitle:   { color: C.white, fontSize: 18, fontWeight: "900" },
-  headerSub:     { color: C.muted, fontSize: 11, marginTop: 1 },
-  balanceBadge:  { alignItems: "flex-end", backgroundColor: C.goldDim, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 7, borderWidth: 1, borderColor: C.goldBorder },
-  balanceValue:  { color: C.gold, fontSize: 14, fontWeight: "900" },
-  balanceCurrency:{ color: C.gold, fontSize: 9, fontWeight: "700" },
+  header:          { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, gap: 10, borderBottomWidth: 1, borderBottomColor: C.hairline },
+  backBtn:         { width: 40, height: 40, borderRadius: 13, backgroundColor: C.glass, borderWidth: 1, borderColor: C.border, alignItems: "center", justifyContent: "center" },
+  headerTitle:     { color: C.white, fontSize: 18, fontWeight: "900" },
+  headerSub:       { color: C.muted, fontSize: 11, marginTop: 1 },
+  balanceBadge:    { alignItems: "flex-end", backgroundColor: C.goldDim, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 7, borderWidth: 1, borderColor: C.goldBorder },
+  balanceValue:    { color: C.gold, fontSize: 14, fontWeight: "900" },
+  balanceCurrency: { color: C.gold, fontSize: 9, fontWeight: "700" },
 
-  // Card générique
   card:          { backgroundColor: C.glass, borderRadius: 20, padding: 16, borderWidth: 1, borderColor: C.border },
   cardTitleRow:  { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 14 },
   cardIconWrap:  { width: 34, height: 34, borderRadius: 10, backgroundColor: C.goldDim, borderWidth: 1, borderColor: C.goldBorder, alignItems: "center", justifyContent: "center" },
   cardTitle:     { color: C.white, fontSize: 14, fontWeight: "900" },
 
-  // Agent
   agentRow:   { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
   agentLabel: { color: C.muted, fontSize: 10, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
   agentCode:  { color: C.gold, fontSize: 18, fontWeight: "900", letterSpacing: 1, marginTop: 3 },
@@ -499,7 +519,6 @@ const s = StyleSheet.create({
   certTxt:    { color: C.green, fontWeight: "900", fontSize: 10, letterSpacing: 0.5 },
   agentNote:  { color: C.muted, fontSize: 12, fontWeight: "600", lineHeight: 18 },
 
-  // Input montant
   inputWrap:  { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255,255,255,0.04)", borderRadius: 16, borderWidth: 1, borderColor: C.border, paddingHorizontal: 16, marginBottom: 12 },
   input:      { flex: 1, color: C.white, fontSize: 28, fontWeight: "900", paddingVertical: 16, letterSpacing: 0.3 },
   inputUnit:  { color: C.gold, fontSize: 16, fontWeight: "900" },
@@ -508,7 +527,6 @@ const s = StyleSheet.create({
   limitPill:  { backgroundColor: C.glass, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5, borderWidth: 1, borderColor: C.border },
   limitTxt:   { color: C.muted, fontSize: 11, fontWeight: "700" },
 
-  // HTG card
   htgCard:    { marginTop: 12, backgroundColor: C.white, borderRadius: 20, padding: 18, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 10 },
   htgTop:     { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
   htgLabel:   { color: "#333", fontSize: 12, fontWeight: "800" },
@@ -519,17 +537,14 @@ const s = StyleSheet.create({
 
   sep:        { height: 1, backgroundColor: C.hairline, marginVertical: 8 },
 
-  // Alertes inline
   alertBanner: { flexDirection: "row", alignItems: "flex-start", gap: 8, borderRadius: 12, padding: 10, borderWidth: 1 },
   alertTxt:    { flex: 1, fontSize: 12, fontWeight: "600", lineHeight: 17 },
 
-  // Bouton
   submitBtn:  { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 16, backgroundColor: C.gold, borderRadius: 18, paddingVertical: 17, shadowColor: C.gold, shadowOpacity: 0.30, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 10 },
   submitTxt:  { color: "#000", fontWeight: "900", fontSize: 16 },
 
   footNote:   { color: C.muted, fontSize: 11, fontWeight: "600", textAlign: "center", lineHeight: 17, marginTop: 14 },
 
-  // Toast
   toast:      { position: "absolute", top: 60, left: 16, right: 16, zIndex: 9999, backgroundColor: C.card, borderRadius: 16, flexDirection: "row", alignItems: "center", padding: 14, gap: 10, borderWidth: 1, shadowColor: "#000", shadowOpacity: 0.4, shadowRadius: 20, elevation: 20 },
   toastBar:   { width: 3, height: "100%" as any, borderRadius: 2, alignSelf: "stretch" },
   toastTitle: { color: C.white, fontWeight: "900", fontSize: 13 },

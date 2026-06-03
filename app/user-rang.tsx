@@ -1,30 +1,32 @@
-// app/classement.tsx  (user-rang.tsx)
-// ✅ RHAZN — Classement Premium · Hall of Fame
-// ✅ Filtres identiques à "Mes Créations"
-// ✅ Grande carte : #1 centré en grand + scroll TOP 2-25 horizontal
-// ✅ TOUS les utilisateurs rang 26+ affichés en liste verticale en dessous
-// ✅ QOB cumulé depuis store_products ET products (les deux tables)
-// ✅ TAN généré et QOB affiché sur chaque carte
-// ✅ Live via Supabase Realtime
+// app/classement.tsx — VERSION COMPLÈTE FINALE
+// ✅ Challenge avec catégorie SEULE + dates
+// ✅ Haptic + Alerte intelligente
+// ✅ Classement complet (TOP 25 + reste)
 
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Animated,
-    Dimensions,
-    FlatList,
-    Image,
-    RefreshControl,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Dimensions,
+  FlatList,
+  Image,
+  Platform,
+  RefreshControl,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  Vibration,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import ChallengeHistory from "../components/ChallengeHistory";
+import TimeSearchBar from "../components/TimeSearchBar";
 import { supabase } from "../lib/supabase";
 
 // ─────────────────────────────────────────────────────────────
@@ -53,6 +55,7 @@ const C = {
   white:      "#FFFFFF",
   green:      "#34C759",
   blue:       "#007AFF",
+  blueLight:  "rgba(0,122,255,0.08)",
   orange:     "#FF9500",
   purple:     "#AF52DE",
   teal:       "#32ADE6",
@@ -62,35 +65,21 @@ const C = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// FILTRES
+// TYPES
 // ─────────────────────────────────────────────────────────────
 type TypeKey = "TOUS"|"SUSPENTZ"|"PRODUCTS"|"AUDIO"|"VIDEO"|"KOZESANS"|"TEXT"|"IMAGES";
 type RankMode = "par_createur" | "meilleur_contenu";
 
-const TYPE_FILTERS: { label: string; key: TypeKey; icon: string; color: string }[] = [
-  { label: "Tous",     key: "TOUS",     icon: "layers-outline",        color: C.gold   },
-  { label: "Suspentz", key: "SUSPENTZ", icon: "play-circle-outline",   color: C.blue   },
-  { label: "Produits", key: "PRODUCTS", icon: "cube-outline",          color: C.orange },
-  { label: "Audio",    key: "AUDIO",    icon: "musical-notes-outline", color: C.purple },
-  { label: "Vidéo",    key: "VIDEO",    icon: "videocam-outline",      color: C.red    },
-  { label: "KozeSans", key: "KOZESANS", icon: "mic-outline",           color: C.teal   },
-  { label: "Texte",    key: "TEXT",     icon: "document-text-outline", color: C.green  },
-  { label: "Images",   key: "IMAGES",   icon: "images-outline",        color: C.gold   },
-];
-
-// ─────────────────────────────────────────────────────────────
-// TYPES
-// ─────────────────────────────────────────────────────────────
 type ContentItem = {
   id:            string;
   title:         string | null;
   category_code: string | null;
   qob_count:     number;
-  tan_earned:    number;   // price_tan pour suspentz, 0 pour produits
+  tan_earned:    number;
   owner_uid:     string | null;
   created_at:    string;
-  media_path:    string | null;   // suspentz
-  cover_url:     string | null;   // produits
+  media_path:    string | null;
+  cover_url:     string | null;
   source:        "suspentz" | "product";
 };
 
@@ -103,8 +92,32 @@ type UserRankItem = {
   totalQob:      number;
   totalTan:      number;
   contentCount:  number;
-  bestContent:   ContentItem;  // contenu ayant le plus de QOB
+  bestContent:   ContentItem;
 };
+
+type Challenge = {
+  id: string;
+  name: string;
+  status: "draft" | "active" | "closed";
+  category_filter: string;
+  rank_mode: string;
+  start_date: string;
+  end_date: string;
+};
+
+// ─────────────────────────────────────────────────────────────
+// FILTRES
+// ─────────────────────────────────────────────────────────────
+const TYPE_FILTERS: { label: string; key: TypeKey; icon: string; color: string }[] = [
+  { label: "Tous",     key: "TOUS",     icon: "layers-outline",        color: C.gold   },
+  { label: "Suspentz", key: "SUSPENTZ", icon: "play-circle-outline",   color: C.blue   },
+  { label: "Produits", key: "PRODUCTS", icon: "cube-outline",          color: C.orange },
+  { label: "Audio",    key: "AUDIO",    icon: "musical-notes-outline", color: C.purple },
+  { label: "Vidéo",    key: "VIDEO",    icon: "videocam-outline",      color: C.red    },
+  { label: "KozeSans", key: "KOZESANS", icon: "mic-outline",           color: C.teal   },
+  { label: "Texte",    key: "TEXT",     icon: "document-text-outline", color: C.green  },
+  { label: "Images",   key: "IMAGES",   icon: "images-outline",        color: C.gold   },
+];
 
 // ─────────────────────────────────────────────────────────────
 // HELPERS
@@ -161,7 +174,6 @@ function buildUserRanking(filtered: ContentItem[], profiles: ProfileMap, mode: R
         bestContent,
       };
     });
-  // Tri selon le mode
   if (mode === "meilleur_contenu") {
     return list.sort((a,b) => (b.bestContent?.qob_count ?? 0) - (a.bestContent?.qob_count ?? 0));
   }
@@ -197,7 +209,6 @@ function Avatar({ url, name, size=36, borderColor, borderWidth=2 }: {
 // ─────────────────────────────────────────────────────────────
 // ════════════ GRANDE CARTE HERO — TOP 25 ════════════
 // ─────────────────────────────────────────────────────────────
-// Placeholder card pour remplir jusqu'à 25 slots
 const PLACEHOLDER_COUNT = 25;
 
 function HeroTop25({ ranking, mode, setPreviewImage }: {
@@ -206,10 +217,9 @@ function HeroTop25({ ranking, mode, setPreviewImage }: {
   setPreviewImage: (img: string) => void;
 }) {
   const hero  = ranking[0];
-  // TOP 2-25 (max 24 mini-cartes) — complété par des slots vides si < 25 créateurs
   const realRest = ranking.slice(1, 25);
   const emptyCount = Math.max(0, PLACEHOLDER_COUNT - 1 - realRest.length);
-  const rest  = realRest; // on affiche les réels + placeholders séparément
+  const rest  = realRest;
   const topQob = mode === "meilleur_contenu"
     ? (hero?.bestContent?.qob_count ?? 1)
     : (hero?.totalQob ?? 1);
@@ -221,26 +231,19 @@ function HeroTop25({ ranking, mode, setPreviewImage }: {
     </View>
   );
 
-  // Image de fond = meilleur contenu du #1
   const heroThumb = resolveUrl(hero.bestContent?.media_path ?? hero.bestContent?.cover_url);
 
   return (
     <View style={hc.outerCard}>
 
-      {/* ══════════════════════════════════
-          HERO #1 — PROFIL CENTRÉ EN GRAND
-      ══════════════════════════════════ */}
       <View style={hc.heroSection}>
 
-        {/* Fond image du meilleur contenu — flouté */}
         {heroThumb
           ? <Image source={{ uri: heroThumb }} style={hc.heroBg} blurRadius={22} />
           : <View style={[hc.heroBg, { backgroundColor: "#050505" }]} />
         }
-        {/* Overlay dégradé sombre */}
         <View style={hc.heroOverlay} />
 
-        {/* ── Badges flottants haut ── */}
         <View style={hc.heroTopRow}>
           <View style={hc.crownBadge}>
             <Text style={{ fontSize: 14 }}>👑</Text>
@@ -252,32 +255,28 @@ function HeroTop25({ ranking, mode, setPreviewImage }: {
           </View>
         </View>
 
-        {/* ── AVATAR CENTRÉ EN GRAND ── */}
         <View style={hc.heroAvatarSection}>
-          {/* Halo or derrière l'avatar */}
           <TouchableOpacity
-  activeOpacity={0.9}
-  onPress={() => {
-    const img = resolveUrl(hero.creatorAvatar);
-    if (img) setPreviewImage(img);
-  }}
->
-  <Avatar
-    url={resolveUrl(hero.creatorAvatar)}
-    name={hero.creatorName}
-    size={AVATAR_HERO_SIZE}
-    borderColor={C.gold}
-    borderWidth={3}
-  />
-</TouchableOpacity>
+            activeOpacity={0.9}
+            onPress={() => {
+              const img = resolveUrl(hero.creatorAvatar);
+              if (img) setPreviewImage(img);
+            }}
+          >
+            <Avatar
+              url={resolveUrl(hero.creatorAvatar)}
+              name={hero.creatorName}
+              size={AVATAR_HERO_SIZE}
+              borderColor={C.gold}
+              borderWidth={3}
+            />
+          </TouchableOpacity>
         </View>
 
-        {/* ── NOM COMPLET centré ── */}
         <Text style={hc.heroName} numberOfLines={2}>
           {hero.creatorName ?? "Créateur RHAZN"}
         </Text>
 
-        {/* ── Stats en row centré ── */}
         <View style={hc.heroStatsRow}>
           {mode === "meilleur_contenu" ? (
             <View style={hc.heroStatPill}>
@@ -306,7 +305,6 @@ function HeroTop25({ ranking, mode, setPreviewImage }: {
           </View>
         </View>
 
-        {/* ── Meilleur contenu (miniature + titre) ── */}
         {heroThumb && (
           <View style={hc.heroContentRow}>
             <Image source={{ uri: heroThumb }} style={hc.heroContentThumb} />
@@ -324,9 +322,6 @@ function HeroTop25({ ranking, mode, setPreviewImage }: {
         )}
       </View>
 
-      {/* ══════════════════════════════════
-          SCROLL TOP 2-25
-      ══════════════════════════════════ */}
       {rest.length > 0 && (
         <View style={hc.scrollSection}>
           <View style={hc.scrollHead}>
@@ -367,20 +362,20 @@ function HeroTop25({ ranking, mode, setPreviewImage }: {
                   </View>
                   <View style={hc.miniAvatarWrap}>
                     <TouchableOpacity
-  activeOpacity={0.9}
-  onPress={() => {
-    const img = resolveUrl(user.creatorAvatar);
-    if (img) setPreviewImage(img);
-  }}
->
-  <Avatar
-    url={resolveUrl(user.creatorAvatar)}
-    name={user.creatorName}
-    size={28}
-    borderColor={C.gold}
-    borderWidth={2}
-  />
-</TouchableOpacity>
+                      activeOpacity={0.9}
+                      onPress={() => {
+                        const img = resolveUrl(user.creatorAvatar);
+                        if (img) setPreviewImage(img);
+                      }}
+                    >
+                      <Avatar
+                        url={resolveUrl(user.creatorAvatar)}
+                        name={user.creatorName}
+                        size={28}
+                        borderColor={C.gold}
+                        borderWidth={2}
+                      />
+                    </TouchableOpacity>
                   </View>
                   <View style={hc.miniBody}>
                     <Text style={hc.miniName} numberOfLines={1}>{user.creatorName ?? "—"}</Text>
@@ -405,7 +400,6 @@ function HeroTop25({ ranking, mode, setPreviewImage }: {
               );
             })}
 
-            {/* ── Placeholders pour compléter jusqu'à 25 slots ── */}
             {Array.from({ length: emptyCount }).map((_, i) => (
               <View key={`placeholder-${i}`} style={[hc.miniCard, hc.miniCardEmpty]}>
                 <View style={[hc.miniThumb, hc.miniThumbEmpty]}>
@@ -435,54 +429,33 @@ function HeroTop25({ ranking, mode, setPreviewImage }: {
 const hc = StyleSheet.create({
   emptyHero:      { alignItems:"center", paddingVertical:40, gap:10, marginHorizontal:16 },
   emptyTxt:       { color:C.muted, fontWeight:"600", fontSize:14, textAlign:"center" },
-
-  // Carte contenante
   outerCard:      { marginHorizontal:16, marginBottom:20, borderRadius:24, overflow:"hidden", borderWidth:1.5, borderColor:C.goldBorder, shadowColor:C.gold, shadowOpacity:0.15, shadowRadius:24, shadowOffset:{width:0,height:6}, elevation:8 },
-
-  // Fond hero sombre
-  heroSection: {
-  backgroundColor:"#000", // ← noir pur Apple
-  paddingBottom:16
-},
+  heroSection: { backgroundColor:"#000", paddingBottom:16 },
   heroBg:         { ...StyleSheet.absoluteFillObject, opacity:0.32 },
   heroOverlay:    { ...StyleSheet.absoluteFillObject, backgroundColor:"rgba(0,0,0,0.60)" },
-
-  // Badges haut
   heroTopRow:     { flexDirection:"row", justifyContent:"space-between", padding:14, paddingBottom:0 },
   crownBadge:     { flexDirection:"row", alignItems:"center", gap:5, backgroundColor:C.goldLight, borderRadius:12, paddingHorizontal:10, paddingVertical:5, borderWidth:1, borderColor:C.goldBorder },
   crownTxt:       { color:C.gold, fontWeight:"900", fontSize:11, letterSpacing:0.5 },
   liveBadge:      { flexDirection:"row", alignItems:"center", gap:4, backgroundColor:"rgba(52,199,89,0.18)", borderRadius:10, paddingHorizontal:8, paddingVertical:4, borderWidth:1, borderColor:"rgba(52,199,89,0.38)" },
   liveDotView:    { width:6, height:6, borderRadius:3, backgroundColor:C.green },
   liveTxt:        { color:C.green, fontWeight:"900", fontSize:10, letterSpacing:0.8 },
-
-  // Avatar centré
   heroAvatarSection:{ alignItems:"center", marginTop:16, marginBottom:12, position:"relative" },
-
-  // Nom centré
   heroName:       { color:C.white, fontWeight:"900", fontSize:20, textAlign:"center", paddingHorizontal:24, letterSpacing:-0.3, textShadowColor:"rgba(0,0,0,0.8)", textShadowOffset:{width:0,height:1}, textShadowRadius:4 },
-
-  // Stats row centré
   heroStatsRow:   { flexDirection:"row", justifyContent:"center", gap:8, marginTop:10, marginBottom:12, paddingHorizontal:16, flexWrap:"wrap" },
   heroStatPill:   { flexDirection:"row", alignItems:"center", gap:4, backgroundColor:"rgba(212,175,55,0.15)", borderRadius:10, paddingHorizontal:10, paddingVertical:6, borderWidth:1, borderColor:"rgba(212,175,55,0.30)" },
   heroStatVal:    { color:C.gold, fontWeight:"900", fontSize:13 },
   heroStatUnit:   { color:"rgba(212,175,55,0.65)", fontWeight:"700", fontSize:9, letterSpacing:0.5 },
-
-  // Meilleur contenu row
   heroContentRow: { flexDirection:"row", alignItems:"center", gap:10, marginHorizontal:14, backgroundColor:"rgba(255,255,255,0.06)", borderRadius:14, padding:10, borderWidth:1, borderColor:"rgba(255,255,255,0.10)" },
   heroContentThumb:{ width:50, height:50, borderRadius:10, flexShrink:0 },
   heroContentLabel:{ color:"rgba(255,255,255,0.45)", fontWeight:"700", fontSize:9, letterSpacing:0.3, marginBottom:2 },
   heroContentTitle:{ color:C.white, fontWeight:"800", fontSize:12, textShadowColor:"rgba(0,0,0,0.6)", textShadowOffset:{width:0,height:1}, textShadowRadius:3 },
   heroContentQob:  { color:C.gold, fontWeight:"800", fontSize:11 },
-
-  // Scroll section
   scrollSection:  { backgroundColor:"#0E0E0E", borderTopWidth:1, borderTopColor:"rgba(255,255,255,0.06)" },
   scrollHead:     { flexDirection:"row", justifyContent:"space-between", alignItems:"center", paddingHorizontal:14, paddingTop:12, paddingBottom:4 },
   scrollTitle:    { color:C.white, fontWeight:"900", fontSize:13 },
   scrollCount:    { color:"rgba(255,255,255,0.40)", fontWeight:"600", fontSize:11 },
   scrollHint:     { color:"rgba(255,255,255,0.28)", fontWeight:"600", fontSize:10 },
   scrollContent:  { paddingHorizontal:14, paddingBottom:14, gap:10 },
-
-  // Mini cartes TOP 2-25
   miniCard:       { width:MINI_CARD_W, backgroundColor:"rgba(255,255,255,0.05)", borderRadius:16, overflow:"hidden", borderWidth:1, borderColor:"rgba(255,255,255,0.09)" },
   miniCardEmpty:  { backgroundColor:"rgba(255,255,255,0.02)", borderColor:"rgba(255,255,255,0.05)", borderStyle:"dashed" as any },
   miniThumb:      { width:"100%", height:80, resizeMode:"cover" },
@@ -516,7 +489,6 @@ function UserRankCard({ item, rank, topQob, setPreviewImage }: {
   return (
     <View style={[uc.card, isTop3 && uc.cardTop3]}>
 
-      {/* Rang */}
       <View style={[uc.rankBadge, { backgroundColor: mbg }]}>
         {rank === 0
           ? <Text style={{ fontSize:14 }}>👑</Text>
@@ -524,7 +496,6 @@ function UserRankCard({ item, rank, topQob, setPreviewImage }: {
         }
       </View>
 
-      {/* ← Miniature du meilleur contenu */}
       {thumb
         ? <Image source={{ uri: thumb }} style={uc.thumb} />
         : <View style={[uc.thumb, uc.thumbEmpty]}>
@@ -532,26 +503,24 @@ function UserRankCard({ item, rank, topQob, setPreviewImage }: {
           </View>
       }
 
-      {/* Infos créateur */}
       <View style={{ flex: 1, gap: 3 }}>
         <View style={{ flexDirection:"row", alignItems:"center", gap:6 }}>
           <TouchableOpacity
-  activeOpacity={0.9}
-  onPress={() => {
-    const img = resolveUrl(item.creatorAvatar);
-    if (img) setPreviewImage(img);
-  }}
->
-  <Avatar
-    url={resolveUrl(item.creatorAvatar)}
-    name={item.creatorName}
-    size={20}
-  />
-</TouchableOpacity>
+            activeOpacity={0.9}
+            onPress={() => {
+              const img = resolveUrl(item.creatorAvatar);
+              if (img) setPreviewImage(img);
+            }}
+          >
+            <Avatar
+              url={resolveUrl(item.creatorAvatar)}
+              name={item.creatorName}
+              size={20}
+            />
+          </TouchableOpacity>
           <Text style={uc.name} numberOfLines={1}>{item.creatorName ?? "Créateur"}</Text>
         </View>
         <Text style={uc.bestTitle} numberOfLines={1}>🎯 {item.bestContent?.title ?? "—"}</Text>
-        {/* Compteurs QOB + TAN */}
         <View style={{ flexDirection:"row", gap:8, marginTop:2, flexWrap:"wrap" }}>
           <View style={{ flexDirection:"row", alignItems:"center", gap:3 }}>
             <Ionicons name="glasses-outline" size={10} color={C.gold} />
@@ -565,7 +534,6 @@ function UserRankCard({ item, rank, topQob, setPreviewImage }: {
           )}
           <Text style={uc.count}>{item.contentCount} contenu{item.contentCount>1?"s":""}</Text>
         </View>
-        {/* Barre progression */}
         <View style={uc.track}>
           <View style={[uc.fill, {
             width: `${Math.max(2, Math.round(pct * 100))}%` as any,
@@ -574,7 +542,6 @@ function UserRankCard({ item, rank, topQob, setPreviewImage }: {
         </View>
       </View>
 
-      {/* QOB total mis en avant à droite */}
       <View style={uc.qobWrap}>
         <Ionicons name="glasses-outline" size={11} color={C.gold} />
         <Text style={uc.qobVal}>{fmtShort(item.totalQob)}</Text>
@@ -603,6 +570,80 @@ const uc = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────
+// ✅ CHALLENGE INFO COMPONENT — CATÉGORIE SEULE + DATES
+// ─────────────────────────────────────────────────────────────
+function ChallengeInfoCard({ challenge }: { challenge: Challenge | null }) {
+  if (!challenge) return null;
+
+  const getCategoryInfo = (key: string) => {
+    const categoryMap: Record<string, { label: string; icon: string; color: string }> = {
+      SUSPENTZ: { label: "Suspentz", icon: "play-circle-outline", color: C.blue },
+      PRODUCTS: { label: "Produits", icon: "cube-outline", color: "#FF9500" },
+      AUDIO: { label: "Audio", icon: "musical-notes-outline", color: "#AF52DE" },
+      VIDEO: { label: "Vidéo", icon: "videocam-outline", color: C.red },
+      KOZESANS: { label: "KozeSans", icon: "mic-outline", color: "#32ADE6" },
+      TEXT: { label: "Texte", icon: "document-text-outline", color: C.green },
+      IMAGES: { label: "Images", icon: "images-outline", color: C.gold },
+    };
+    return categoryMap[key] || { label: key, icon: "tag-outline", color: C.gold };
+  };
+
+  const catInfo = getCategoryInfo(challenge.category_filter);
+  const startDate = new Date(challenge.start_date);
+  const endDate = new Date(challenge.end_date);
+
+  const formatDate = (date: Date) => {
+    return date.toLocaleDateString("fr-FR", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  return (
+    <View style={s.challengeContainer}>
+      <View style={s.challengeHeader}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Ionicons name="flame" size={16} color={C.red} />
+          <Text style={s.challengeTitle}>Challenge en cours</Text>
+          <Ionicons name="play-circle" size={12} color={C.green} />
+        </View>
+      </View>
+
+      <Text style={s.challengeName}>{challenge.name}</Text>
+
+      {/* Catégorie seule */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: catInfo.color + "15", borderRadius: 999, paddingVertical: 4, paddingHorizontal: 10, borderWidth: 1, borderColor: catInfo.color + "40" }}>
+          <Ionicons name={catInfo.icon as any} size={12} color={catInfo.color} />
+          <Text style={{ color: catInfo.color, fontWeight: "700", fontSize: 11 }}>
+            {catInfo.label}
+          </Text>
+        </View>
+      </View>
+
+      {/* Dates */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 10 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4, flex: 1 }}>
+          <Ionicons name="calendar-outline" size={12} color={C.gold} />
+          <Text style={{ color: C.sub, fontWeight: "600", fontSize: 11 }}>
+            {formatDate(startDate)}
+          </Text>
+        </View>
+        <Ionicons name="arrow-forward" size={12} color={C.border} />
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4, flex: 1 }}>
+          <Ionicons name="calendar-outline" size={12} color={C.gold} />
+          <Text style={{ color: C.sub, fontWeight: "600", fontSize: 11 }}>
+            {formatDate(endDate)}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // MAIN SCREEN
 // ─────────────────────────────────────────────────────────────
 export default function Classement() {
@@ -618,6 +659,16 @@ export default function Classement() {
   const [lastUpdated, setLastUpdated] = useState<Date|null>(null);
 
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [snapshotRanking, setSnapshotRanking] = useState<UserRankItem[] | null>(null);
+  const [isLoadingSnapshot, setIsLoadingSnapshot] = useState(false);
+  const [minDate, setMinDate] = useState<Date | null>(null);
+  const [maxDate, setMaxDate] = useState<Date | null>(null);
+  const [showChallengeHistory, setShowChallengeHistory] = useState(false);
+
+  // ✅ CHALLENGE EN COURS
+  const [activeChallenge, setActiveChallenge] = useState<Challenge | null>(null);
+  const [loadingChallenge, setLoadingChallenge] = useState(false);
 
   const liveDot = useRef(new Animated.Value(1)).current;
 
@@ -630,13 +681,79 @@ export default function Classement() {
     return () => p.stop();
   }, []);
 
-  // ── Chargement — DEUX tables : store_products + products ───
+  // ✅ LOAD ACTIVE CHALLENGE
+  const loadActiveChallenge = useCallback(async () => {
+    setLoadingChallenge(true);
+    try {
+      const { data, error } = await supabase.rpc("rz_get_challenges");
+      if (!error && data) {
+        const active = data.find((ch: Challenge) => ch.status === "active");
+        setActiveChallenge(active || null);
+      }
+    } catch (e) {
+      console.error("Load active challenge error:", e);
+    } finally {
+      setLoadingChallenge(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadActiveChallenge();
+    const interval = setInterval(loadActiveChallenge, 30000);
+    return () => clearInterval(interval);
+  }, [loadActiveChallenge]);
+
+  // ✅ HANDLE ARCHIVE BUTTON — HAPTIC + ALERTE INTELLIGENTE
+  const handleArchivePress = useCallback(async () => {
+    try {
+      if (Platform.OS === "ios") {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Light);
+      } else {
+        Vibration.vibrate([0, 10, 5, 10]);
+      }
+    } catch (e) {
+      console.warn("Haptic error:", e);
+    }
+
+    if (!activeChallenge) {
+      Alert.alert(
+        "Aucun Challenge Actif",
+        "Il n'y a actuellement aucun challenge en cours. Les challenges terminés apparaîtront dans l'historique.",
+        [{ text: "OK", style: "default" }],
+        { cancelable: true }
+      );
+    } else {
+      Alert.alert(
+        "Challenge en Cours",
+        `🏆 "${activeChallenge.name}"\n\n📂 ${getCategoryLabel(activeChallenge.category_filter)}\n\nLe challenge se termine bientôt. Les gagnants seront annoncés à sa fermeture.`,
+        [
+          { text: "Voir l'historique", style: "default", onPress: () => setShowChallengeHistory(true) },
+          { text: "OK", style: "cancel" }
+        ],
+        { cancelable: true }
+      );
+    }
+  }, [activeChallenge]);
+
+  const getCategoryLabel = (key: string) => {
+    const categoryMap: Record<string, string> = {
+      SUSPENTZ: "Suspentz",
+      PRODUCTS: "Produits",
+      AUDIO: "Audio",
+      VIDEO: "Vidéo",
+      KOZESANS: "KozeSans",
+      TEXT: "Texte",
+      IMAGES: "Images",
+    };
+    return categoryMap[key] || key;
+  };
+
+  // ── Load content ──
   const load = useCallback(async (mode: "first"|"refresh" = "first") => {
     if (mode === "first") setLoading(true);
     else                  setRefreshing(true);
     try {
 
-      // ── 1. Suspentz (store_products) ─────────────────────
       const { data: spData } = await supabase
         .from("store_products")
         .select("id, title, category_code, qob_count, price_tan, owner_uid, created_at, media_path")
@@ -645,7 +762,6 @@ export default function Classement() {
         .order("qob_count", { ascending: false })
         .limit(1000);
 
-      // ── 2. Produits (products) ────────────────────────────
       const { data: prodData } = await supabase
         .from("products")
         .select("id, title, category_label, qob_count, user_id, created_at, cover_url")
@@ -654,7 +770,6 @@ export default function Classement() {
         .order("qob_count", { ascending: false })
         .limit(1000);
 
-      // ── Fusionner les deux sources ────────────────────────
       const fromSuspentz: ContentItem[] = (spData ?? []).map((c: any) => ({
         id:            c.id,
         title:         c.title ?? null,
@@ -673,7 +788,7 @@ export default function Classement() {
         title:         c.title ?? null,
         category_code: "PRODUCTS",
         qob_count:     Number(c.qob_count ?? 0),
-        tan_earned:    0,  // les produits HTG n'ont pas de TAN direct
+        tan_earned:    0,
         owner_uid:     c.user_id ?? null,
         created_at:    c.created_at,
         media_path:    null,
@@ -684,7 +799,6 @@ export default function Classement() {
       const merged = [...fromSuspentz, ...fromProducts];
       setAllContent(merged);
 
-      // ── Profils des créateurs ─────────────────────────────
       const ownerIds = [
         ...new Set([
           ...fromSuspentz.map(c => c.owner_uid),
@@ -715,7 +829,6 @@ export default function Classement() {
 
   useEffect(() => { load("first"); }, []);
 
-  // Realtime
   useEffect(() => {
     const ch = supabase.channel("classement-live")
       .on("postgres_changes", { event:"*", schema:"public", table:"store_products" }, () => load("refresh"))
@@ -724,14 +837,11 @@ export default function Classement() {
     return () => { supabase.removeChannel(ch); };
   }, [load]);
 
-  // ── Calculs ────────────────────────────────────────────────
   const filtered    = useMemo(() => applyFilter(allContent, typeFilter), [allContent, typeFilter]);
   const userRanking = useMemo(() => buildUserRanking(filtered, profiles, rankMode), [filtered, profiles, rankMode]);
 
-  // TOP 25 → grande carte hero
-  // rang 26+ → liste verticale en dessous
   const top25     = userRanking.slice(0, 25);
-  const restUsers = userRanking.slice(25);      // rang 26, 27, 28...
+  const restUsers = userRanking.slice(25);
   const topQob    = userRanking[0]?.totalQob ?? 1;
 
   const filterInfo = TYPE_FILTERS.find(f => f.key === typeFilter)!;
@@ -739,7 +849,6 @@ export default function Classement() {
   const fmtTime = (d: Date|null) =>
     d ? d.toLocaleTimeString("fr-FR", { hour:"2-digit", minute:"2-digit", second:"2-digit" }) : "—";
 
-  // ── Loading ────────────────────────────────────────────────
   if (loading) {
     return (
       <SafeAreaView style={s.screen}>
@@ -753,44 +862,41 @@ export default function Classement() {
   }
 
   return (
-  <SafeAreaView style={s.screen}>
+    <SafeAreaView style={s.screen}>
 
-    {/* ✅ MODAL PREVIEW IMAGE */}
-    {previewImage && (
-      <View style={{
-        position: "absolute",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: "#000",
-        justifyContent: "center",
-        alignItems: "center",
-        zIndex: 9999
-      }}>
-        <TouchableOpacity
-          style={{ position:"absolute", top:50, right:20, zIndex:10 }}
-          onPress={() => setPreviewImage(null)}
-        >
-          <Ionicons name="close" size={28} color="#FFF" />
-        </TouchableOpacity>
+      {previewImage && (
+        <View style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "#000",
+          justifyContent: "center",
+          alignItems: "center",
+          zIndex: 9999
+        }}>
+          <TouchableOpacity
+            style={{ position:"absolute", top:50, right:20, zIndex:10 }}
+            onPress={() => setPreviewImage(null)}
+          >
+            <Ionicons name="close" size={28} color="#FFF" />
+          </TouchableOpacity>
 
-        <Image
-          source={{ uri: previewImage }}
-          style={{
-            width: "90%",
-            height: "60%",
-            borderRadius: 20,
-            resizeMode: "cover"
-          }}
-        />
-      </View>
-    )}
+          <Image
+            source={{ uri: previewImage }}
+            style={{
+              width: "90%",
+              height: "60%",
+              borderRadius: 20,
+              resizeMode: "cover"
+            }}
+          />
+        </View>
+      )}
 
-    {/* ══ ZONE FIXE HEADER + FILTRES ══ */}
-    <View style={s.topZone}>
+      <View style={s.topZone}>
 
-        {/* Header */}
         <View style={s.header}>
           <TouchableOpacity style={s.backBtn} onPress={() => router.back()} activeOpacity={0.75}>
             <Ionicons name="chevron-back" size={22} color={C.gold} />
@@ -806,9 +912,16 @@ export default function Classement() {
             <Ionicons name="people-outline" size={12} color={C.gold} />
             <Text style={s.headerBadgeTxt}>{fmtN(userRanking.length)} créateurs</Text>
           </View>
+
+          <TouchableOpacity
+            style={[s.headerIconBtn, { backgroundColor: C.cardInner }]}
+            onPress={handleArchivePress}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="time-outline" size={16} color={C.text} />
+          </TouchableOpacity>
         </View>
 
-        {/* ── Boutons mode de classement — AU-DESSUS des filtres catégorie ── */}
         <View style={s.modeRow}>
           <TouchableOpacity
             style={[s.modeBtn, rankMode === "par_createur" && s.modeBtnActive]}
@@ -847,11 +960,9 @@ export default function Classement() {
           </TouchableOpacity>
         </View>
 
-        {/* Filtres scrollables — identiques à Mes Créations */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.pillsRow}>
           {TYPE_FILTERS.map(f => {
             const on  = typeFilter === f.key;
-            // Compte les créateurs dans cette catégorie (rapide)
             const catFiltered = applyFilter(allContent, f.key);
             const cnt = buildUserRanking(catFiltered, profiles, rankMode).length;
             return (
@@ -870,12 +981,6 @@ export default function Classement() {
         </ScrollView>
       </View>
 
-      {/* ══ LISTE PRINCIPALE ══
-          FlatList avec :
-          - ListHeaderComponent = grande carte TOP 25
-          - data = restUsers (rang 26 et +)
-          Ainsi TOUS les utilisateurs sont visibles en scrollant
-      */}
       <FlatList
         data={restUsers}
         keyExtractor={u => u.uid}
@@ -886,14 +991,55 @@ export default function Classement() {
         contentContainerStyle={{ paddingBottom: 100 + insets.bottom, paddingTop: 8 }}
         ListHeaderComponent={
           <>
-            {/* GRANDE CARTE TOP 25 */}
-            {top25.length > 0 && <HeroTop25
-  ranking={top25}
-  mode={rankMode}
-  setPreviewImage={setPreviewImage}
-/>}
+            {/* ✅ AFFICHAGE DU CHALLENGE EN COURS */}
+            {loadingChallenge ? (
+              <View style={{ paddingVertical: 12, alignItems: "center" }}>
+                <ActivityIndicator size={16} color={C.gold} />
+              </View>
+            ) : (
+              <ChallengeInfoCard challenge={activeChallenge} />
+            )}
 
-            {/* ── En-tête section liste rang 26+ ── */}
+            {/* BARRE TEMPORELLE */}
+            <TimeSearchBar
+              onDateChange={setSelectedDate}
+              minDate={minDate || new Date(new Date().setDate(new Date().getDate() - 30))}
+              maxDate={maxDate || new Date()}
+            />
+
+            {/* GRANDE CARTE TOP 25 */}
+            {(snapshotRanking?.length ?? top25.length) > 0 && <HeroTop25
+              ranking={snapshotRanking ?? top25}
+              mode={rankMode}
+              setPreviewImage={setPreviewImage}
+            />}
+
+            {isLoadingSnapshot && (
+              <View style={{ alignItems: "center", paddingVertical: 20 }}>
+                <ActivityIndicator size="large" color={C.gold} />
+                <Text style={{ color: C.sub, fontWeight: "600", marginTop: 8 }}>
+                  Chargement de l'historique…
+                </Text>
+              </View>
+            )}
+
+            {snapshotRanking && (
+              <View style={{
+                marginHorizontal: 16,
+                marginBottom: 12,
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                backgroundColor: "rgba(212,175,55,0.08)",
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: "rgba(212,175,55,0.25)",
+              }}>
+                <Text style={{ color: C.gold, fontWeight: "700", fontSize: 11 }}>
+                  📅 Vous consultez l'historique du {selectedDate.toLocaleDateString("fr-FR")} à {selectedDate.toLocaleTimeString("fr-FR")}
+                </Text>
+              </View>
+            )}
+
             {restUsers.length > 0 && (
               <>
                 <View style={s.sectionHeader}>
@@ -913,7 +1059,6 @@ export default function Classement() {
                   </View>
                 </View>
 
-                {/* Note explicative */}
                 <View style={s.noteCard}>
                   <Ionicons name="information-circle-outline" size={13} color={C.blue} />
                   <Text style={s.noteTxt}>
@@ -923,7 +1068,6 @@ export default function Classement() {
               </>
             )}
 
-            {/* État vide */}
             {userRanking.length === 0 && (
               <View style={s.emptyWrap}>
                 <Text style={{ fontSize:48 }}>🏆</Text>
@@ -935,52 +1079,79 @@ export default function Classement() {
             )}
           </>
         }
-        // Chaque item = 1 utilisateur rang 26+
         renderItem={({ item, index }) => (
-  <UserRankCard
-    item={item}
-    rank={index + 25}
-    topQob={topQob}
-    setPreviewImage={setPreviewImage}
-  />
-)}
+          <UserRankCard
+            item={item}
+            rank={index + 25}
+            topQob={topQob}
+            setPreviewImage={setPreviewImage}
+          />
+        )}
       />
 
+      {/* ✅ MODAL HISTORIQUE */}
+      {showChallengeHistory && (
+        <ChallengeHistory
+          visible={showChallengeHistory}
+          onClose={() => setShowChallengeHistory(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// STYLES GLOBAUX
-// ─────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   screen: { flex:1, backgroundColor:C.bg },
-
   topZone:  { backgroundColor:C.bg, borderBottomWidth:1, borderBottomColor:C.border, paddingBottom:10, zIndex:10 },
   header:   { flexDirection:"row", alignItems:"center", paddingHorizontal:16, paddingTop:50, paddingBottom:10, gap:12 },
   backBtn:  { width:38, height:38, borderRadius:12, backgroundColor:C.card, borderWidth:1, borderColor:C.border, alignItems:"center", justifyContent:"center" },
   title:    { color:C.text, fontWeight:"900", fontSize:22 },
   subtitle: { color:C.muted, fontWeight:"600", fontSize:11, marginTop:2 },
   liveDot:  { width:7, height:7, borderRadius:4, backgroundColor:C.green },
-
   headerBadge:   { flexDirection:"row", alignItems:"center", gap:5, backgroundColor:C.goldLight, borderRadius:12, paddingHorizontal:10, paddingVertical:6, borderWidth:1, borderColor:C.goldBorder },
   headerBadgeTxt:{ color:C.gold, fontWeight:"900", fontSize:11 },
-
-  // Mode boutons (au-dessus des filtres)
+  headerIconBtn:  { width:38, height:38, borderRadius:12, borderWidth:1, borderColor:C.border, alignItems:"center", justifyContent:"center" },
   modeRow:        { flexDirection:"row", paddingHorizontal:16, paddingBottom:10, gap:10 },
-  modeBtn:        { flex:1, flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2,
-                    paddingVertical:10, borderRadius:14, backgroundColor:C.card,
-                    borderWidth:1.5, borderColor:C.border },
+  modeBtn:        { flex:1, flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2, paddingVertical:10, borderRadius:14, backgroundColor:C.card, borderWidth:1.5, borderColor:C.border },
   modeBtnActive:  { backgroundColor:C.dark, borderColor:C.goldBorder },
   modeBtnTxt:     { color:C.sub, fontWeight:"800", fontSize:12 },
   modeBtnTxtActive:{ color:C.white, fontWeight:"900", fontSize:12 },
   modeBtnSub:     { color:C.muted, fontWeight:"600", fontSize:9 },
-
   pillsRow:    { paddingHorizontal:16, gap:8, flexDirection:"row" },
   pill:        { flexDirection:"row", alignItems:"center", gap:5, borderWidth:1, borderColor:C.border, paddingVertical:6, paddingHorizontal:11, borderRadius:999, backgroundColor:C.card },
   pillTxt:     { fontWeight:"700", color:C.sub, fontSize:12 },
   pillCount:   { backgroundColor:C.cardInner, borderRadius:8, paddingHorizontal:5, paddingVertical:2, minWidth:20, alignItems:"center" },
   pillCountTxt:{ color:C.muted, fontWeight:"900", fontSize:9 },
+
+  // ✅ CHALLENGE STYLES
+  challengeContainer: {
+    marginHorizontal: 16,
+    marginVertical: 12,
+    padding: 14,
+    backgroundColor: C.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.gold,
+    borderLeftWidth: 4,
+    borderLeftColor: C.gold,
+  },
+  challengeHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  challengeTitle: {
+    color: C.gold,
+    fontWeight: "900",
+    fontSize: 12,
+    letterSpacing: 0.5,
+  },
+  challengeName: {
+    color: C.text,
+    fontWeight: "900",
+    fontSize: 16,
+    marginTop: 8,
+  },
 
   sectionHeader:   { flexDirection:"row", alignItems:"center", justifyContent:"space-between", paddingHorizontal:16, marginBottom:8, marginTop:4 },
   sectionLeft:     { flexDirection:"row", alignItems:"center", gap:8 },
@@ -989,19 +1160,12 @@ const s = StyleSheet.create({
   sectionSub:      { color:C.muted, fontWeight:"600", fontSize:10, marginTop:1 },
   sectionBadge:    { borderRadius:10, paddingHorizontal:10, paddingVertical:5, borderWidth:1 },
   sectionBadgeTxt: { fontWeight:"800", fontSize:11 },
-
   noteCard: { flexDirection:"row", alignItems:"flex-start", gap:7, marginHorizontal:16, marginBottom:10, backgroundColor:C.blueLight, borderRadius:12, padding:10, borderWidth:1, borderColor:"rgba(0,122,255,0.18)" },
   noteTxt:  { flex:1, color:C.blue, fontWeight:"600", fontSize:11, lineHeight:16 },
-
   emptyWrap:  { alignItems:"center", paddingVertical:48, gap:12 },
   emptyTitle: { color:C.text, fontWeight:"900", fontSize:18 },
   emptySub:   { color:C.sub, fontWeight:"600", fontSize:14, textAlign:"center", paddingHorizontal:40, lineHeight:20 },
-
   loadCenter: { flex:1, alignItems:"center", justifyContent:"center", gap:18 },
   loadIcon:   { width:68, height:68, borderRadius:22, backgroundColor:C.goldLight, borderWidth:1.5, borderColor:C.goldBorder, alignItems:"center", justifyContent:"center" },
   loadTxt:    { color:C.muted, fontWeight:"600", fontSize:14 },
 });
-
-// Correction d'une constante manquante utilisée dans noteCard
-const blueLight = "rgba(0,122,255,0.08)";
-Object.assign(C, { blueLight });

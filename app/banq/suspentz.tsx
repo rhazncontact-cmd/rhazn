@@ -560,9 +560,8 @@ function ActiveSuspentzVideo({
       </View>
 
       <View style={s.watermarkWrap} pointerEvents="none">
-        <Image source={RHAZN_LOGO} style={s.watermarkLogo} resizeMode="contain" />
-        <Text style={s.watermarkText}>RHAZN</Text>
-      </View>
+  <Image source={RHAZN_LOGO} style={s.watermarkLogo} resizeMode="contain" />
+</View>
 
       {showAcset && (
         <View style={s.acsetWrap}>
@@ -811,10 +810,12 @@ export default function BanqSuspentz() {
     (async () => {
       const { data: auth } = await supabase.auth.getUser(); const uid = auth?.user?.id; if (!uid || !alive) return;
       await refreshWallet();
-      ch = supabase.channel("wallet-live-sus")
-        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "wallets", filter: `user_id=eq.${uid}` },
-          p => { setWalletTan(Number(p.new.tan_balance || 0)); setWalletAcset(Number((p.new as any).acset_balance || 0)); })
-        .subscribe();
+// ✅ Supprimer le channel existant avant d'en créer un nouveau
+await supabase.removeAllChannels();
+ch = supabase.channel(`wallet-live-sus-${Date.now()}`)
+  .on("postgres_changes", { event: "UPDATE", schema: "public", table: "wallets", filter: `user_id=eq.${uid}` },
+    p => { setWalletTan(Number(p.new.tan_balance || 0)); setWalletAcset(Number((p.new as any).acset_balance || 0)); })
+  .subscribe();
     })();
     return () => { alive = false; if (ch) supabase.removeChannel(ch); };
   }, [authReady, refreshWallet]);
@@ -1040,8 +1041,7 @@ const s = StyleSheet.create({
   audioBadge:   { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(0,0,0,0.55)", borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: "rgba(212,175,55,0.40)" },
   audioBadgeTxt:{ color: C.gold, fontSize: 9, fontWeight: "800" },
   watermarkWrap:{ position: "absolute", top: 56, right: 12, zIndex: 12, alignItems: "flex-end", gap: 3 },
-  watermarkLogo:{ width: 68, height: 20, opacity: 0.80, tintColor: "#00C851" },
-  watermarkText:{ fontSize: 8, fontWeight: "900", color: "rgba(255,255,255,0.50)", letterSpacing: 2 },
+  watermarkLogo:{ width: 52, height: 52, opacity: 0.90 },
   acsetWrap:    { position: "absolute", right: 14, bottom: 162, zIndex: 500, alignItems: "flex-end" },
   acsetCard:    { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "rgba(6,6,6,0.93)", borderRadius: 14, borderWidth: 1, borderColor: "rgba(212,175,55,0.45)", paddingHorizontal: 10, paddingVertical: 9, shadowColor: C.gold, shadowOpacity: 0.3, shadowRadius: 10, elevation: 8 },
   acsetRingPct: { position: "absolute", color: C.gold, fontSize: 8, fontWeight: "900" },

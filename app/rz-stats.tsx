@@ -1107,7 +1107,7 @@ export default function Statistiques() {
       {/* ══ CONTENU SCROLLABLE ══ */}
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 100 + insets.bottom, paddingTop: 8 }}
+        contentContainerStyle={{ paddingBottom: 100 + insets.bottom, paddingTop: 50 }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -1630,7 +1630,7 @@ export default function Statistiques() {
                 <View style={{ flex: 1, backgroundColor: C.bg }}>
 
                   {/* ── Header ─────────────────────────────────── */}
-                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingTop: 20, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: C.border, backgroundColor: C.card }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingTop: 50, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: C.border, backgroundColor: C.card }}>
                     <View>
                       <Text style={{ fontSize: 20, fontWeight: "900", color: C.text }}>🇭🇹 Départements Haïti</Text>
                       <Text style={{ fontSize: 12, color: C.muted, fontWeight: "600", marginTop: 2 }}>
@@ -1764,7 +1764,7 @@ export default function Statistiques() {
               <Modal visible={geoModal === "country"} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setGeoModal(null)}>
                 <View style={{ flex: 1, backgroundColor: C.bg }}>
                   {/* Header */}
-                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingTop: 20, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: C.border, backgroundColor: C.card }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingTop: 50, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: C.border, backgroundColor: C.card }}>
                     <View>
                       <Text style={{ fontSize: 20, fontWeight: "900", color: C.text }}>🌍 Pays utilisateurs</Text>
                       <Text style={{ fontSize: 12, color: C.muted, fontWeight: "600", marginTop: 2 }}>{st.countryList.length} pays — {st.countryList.reduce((s, c) => s + c.count, 0)} utilisateurs</Text>

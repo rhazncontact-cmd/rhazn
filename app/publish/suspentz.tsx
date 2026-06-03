@@ -49,7 +49,7 @@ import { supabase } from "../../lib/supabase";
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────────
 const { width: SCREEN_W } = Dimensions.get("window");
-const MAX_DURATION_SEC = 95;
+const MAX_DURATION_SEC = 125;
 const FOOTER_H = 95;
 
 const C = {

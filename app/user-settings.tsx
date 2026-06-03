@@ -15,6 +15,7 @@ import {
   TouchableOpacity,
   View
 } from "react-native";
+import ChallengeManager from "../components/ChallengeManager";
 import PinVerifyModal from "../components/PinVerifyModal";
 import { logoutStore } from "../lib/logoutStore";
 import { supabase } from "../lib/supabase";
@@ -26,7 +27,7 @@ import Constants from "expo-constants";
 import { updateStore } from "../lib/useAppUpdate";
 const APP_VERSION   = (Constants.expoConfig?.version ?? Constants.manifest?.version ?? "1.1.1") as string;
 const PLAYSTORE_URL = "https://play.google.com/store/apps/details?id=com.rhzn.dev";
-const LATEST_VERSION_URL = "https://mxxlchaygarszkygmylo.supabase.co/rest/v1/app_config?select=latest_version&app=eq.rhazn&apikey=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im14eGxjaGF5Z2Fyc3preWdteWxvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDA1OTc3NjQsImV4cCI6MjA1NjE3Mzc2NH0.Fmn2ul5ESMX-DqrNxpjaRGOqCMgFGJMFPqgNExAbHEk";
+const SUPREME_EMAIL = "meyounbauniklovegodstory@gmail.com";
 
 // ─────────────────────────────────────────────────────────────────
 // DESIGN TOKENS
@@ -101,17 +102,20 @@ export default function SettingsUser() {
   const router = useRouter();
 
   const [loading,      setLoading]     = useState(true);
-  const [updateAvail,  setUpdateAvail]  = useState(false);  // nouvelle version dispo
+  const [updateAvail,  setUpdateAvail]  = useState(false);
   const [latestVer,    setLatestVer]    = useState<string | null>(null);
-  // ✅ Paramètres = entrée libre (pas de PIN au montage)
   const [pinVisible,  setPinVisible]  = useState(false);
-  const [pinReady,    setPinReady]    = useState(false);  // PIN uniquement pour profil/modifier
-  const [pinTarget,     setPinTarget]     = useState<string>("/user-profile");  // route après PIN
-  const [pendingLogout, setPendingLogout] = useState(false);  // PIN pour déconnexion
+  const [pinReady,    setPinReady]    = useState(false);
+  const [pinTarget,     setPinTarget]     = useState<string>("/user-profile");
+  const [pendingLogout, setPendingLogout] = useState(false);
   const [userEmail,   setUserEmail]   = useState<string | null>(null);
+  const [isSuppreme,  setIsSupreme]   = useState(false);
   const [cacheSize,   setCacheSize]   = useState("128 MB");
   const [qualityOpen, setQualityOpen] = useState(false);
   const [settings,    setSettings]    = useState<LocalSettings>(DEFAULT_SETTINGS);
+
+  // ✅ CHALLENGES STATE
+  const [showChallengeManager, setShowChallengeManager] = useState(false);
 
   const toggle     = (key: keyof LocalSettings) =>
     setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -135,13 +139,12 @@ export default function SettingsUser() {
     }, 2200);
   };
 
-  // ── Vérification mise à jour via updateStore ──
+  // ── Vérification mise à jour ──
   useEffect(() => {
     const unsub = updateStore.subscribe((info) => {
       setUpdateAvail(info.available);
       setLatestVer(info.latestVersion);
     });
-    // Forcer une vérification immédiate
     updateStore.check();
     return unsub;
   }, []);
@@ -152,6 +155,7 @@ export default function SettingsUser() {
       const { data: auth } = await supabase.auth.getUser();
       if (!auth?.user) return router.replace("/auth/login");
       setUserEmail(auth.user.email ?? null);
+      setIsSupreme((auth.user.email || "").toLowerCase() === SUPREME_EMAIL);
       setLoading(false);
     })();
   }, []);
@@ -173,11 +177,10 @@ export default function SettingsUser() {
     );
   }
 
-  // ── Si PIN pas encore validé → afficher un écran vide (le modal s'ouvre par-dessus) ──
   return (
     <View style={{flex:1}}>
 
-      {/* ✅ PIN RHAZN — requis à chaque ouverture des paramètres */}
+      {/* ✅ PIN RHAZN */}
       <PinVerifyModal
         visible={pinVisible}
         onSuccess={async () => {
@@ -185,7 +188,7 @@ export default function SettingsUser() {
           setPinReady(false);
           if (pendingLogout) {
             setPendingLogout(false);
-            logoutStore.trigger(); // ✅ signaler une déconnexion volontaire
+            logoutStore.trigger();
             await supabase.auth.signOut();
             router.replace("/auth/login");
           } else {
@@ -199,7 +202,7 @@ export default function SettingsUser() {
         showManageLink={false}
       />
 
-      {/* Contenu toujours visible — PIN requis uniquement pour Profil/Modifier */}
+      {/* Contenu */}
       <ScrollView
         style={{ flex: 1, backgroundColor: C.bg }}
         contentContainerStyle={s.scroll}
@@ -211,15 +214,13 @@ export default function SettingsUser() {
           <Text style={s.pageTitle}>Paramètres</Text>
         </View>
 
-        {/* ══ BANNIÈRE MISE À JOUR — Apple Premium ══ */}
-        {/* ✅ MODIFIÉ : déplacée sous le titre Paramètres */}
+        {/* ══ BANNIÈRE MISE À JOUR ══ */}
         {updateAvail && latestVer && (
           <TouchableOpacity
             style={s.updateBanner}
             onPress={() => Linking.openURL(PLAYSTORE_URL)}
             activeOpacity={0.88}
           >
-            {/* Point rouge animé */}
             <View style={s.updateBadgeDot} />
             <View style={s.updateBannerLeft}>
               <View style={s.updateIcon}>
@@ -247,12 +248,49 @@ export default function SettingsUser() {
         {/* ═══════════════════ SECTION : MON PROFIL ═══════════════════ */}
         <SectionHeader title="MON PROFIL" icon="person-circle-outline" />
         <View style={s.card}>
-          <NavRow label="Mon profil"        onPress={() => { setPinTarget("/user-profile");    setPinVisible(true); setPinReady(false); }} />
+          <NavRow label="Mon profil"        onPress={() => { setPinTarget("/user-profile");    setPinVisible(true); }} />
           <Divider />
-          <NavRow label="Modifier le profil" onPress={() => { setPinTarget("/identity-warning"); setPinVisible(true); setPinReady(false); }} />
-          <Divider />
-
+          <NavRow label="Modifier le profil" onPress={() => { setPinTarget("/identity-warning"); setPinVisible(true); }} />
         </View>
+
+        {/* ═══════════════════ SECTION : GESTION CHALLENGES (SUPRÊME) ═══════════════════ */}
+        {isSuppreme && (
+          <>
+            <SectionHeader title="GESTION DES CHALLENGES" icon="trophy-outline" gold />
+            <View style={[s.card, s.goldCard]}>
+              <TouchableOpacity
+                style={s.premiumActionRow}
+                onPress={() => setShowChallengeManager(true)}
+                activeOpacity={0.85}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
+                  <View style={s.premiumIconWrap}>
+                    <Ionicons name="settings-outline" size={18} color={C.gold} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.premiumLabel}>Gérer les challenges</Text>
+                    <Text style={s.premiumSub}>Créer, éditer et finaliser des challenges</Text>
+                  </View>
+                </View>
+                <View style={s.premiumBadge}>
+                  <Ionicons name="chevron-forward" size={16} color={C.gold} />
+                </View>
+              </TouchableOpacity>
+
+              <Divider gold />
+
+              <View style={s.premiumInfoBox}>
+                <Ionicons name="information-circle-outline" size={14} color={C.gold} />
+                <View style={{ flex: 1, gap: 4 }}>
+                  <Text style={s.premiumInfoTitle}>Challenges Premium</Text>
+                  <Text style={s.premiumInfoText}>
+                    Organisez des compétitions, archivez les top 25 gagnants et consultez l'historique complet.
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </>
+        )}
 
         {/* ═══════════════════ SECTION : LECTURE & VIDÉO ═══════════════════ */}
         <SectionHeader title="LECTURE & VIDÉO" icon="play-circle-outline" />
@@ -389,7 +427,6 @@ export default function SettingsUser() {
           onPress={() => {
             setPendingLogout(true);
             setPinVisible(true);
-            setPinReady(false);
           }}
         >
           <Ionicons name="log-out-outline" size={18} color={C.danger} />
@@ -428,6 +465,13 @@ export default function SettingsUser() {
           </View>
         </BlurView>
       </Modal>
+
+      {/* ═══════════════════ CHALLENGE MANAGER MODAL ═══════════════════ */}
+      <ChallengeManager
+        visible={showChallengeManager}
+        onClose={() => setShowChallengeManager(false)}
+        onChallengeUpdated={() => {}}
+      />
 
       {/* ═══════════════════ NOTIFICATION TOAST ═══════════════════ */}
       {notif && (
@@ -514,7 +558,7 @@ const s = StyleSheet.create({
   boot:   { flex: 1, backgroundColor: C.bg, justifyContent: "center", alignItems: "center" },
   scroll: { padding: 18, paddingBottom: 40 },
 
-  // ── Bannière mise à jour Apple Premium ──
+  // ── Bannière mise à jour ──
   updateBanner: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     backgroundColor: C.gold, borderRadius: 20,
@@ -532,14 +576,6 @@ const s = StyleSheet.create({
   updateProgressBar: { height: 3, backgroundColor: "rgba(0,0,0,0.15)", borderRadius: 99, marginTop: 8, overflow: "hidden" },
   updateProgressFill:{ height: 3, width: "75%", backgroundColor: "rgba(0,0,0,0.35)", borderRadius: 99 },
 
-  // ── Ligne update dans carte RHAZN ──
-  updateRow:      { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 13, gap: 10 },
-  updateRowIcon:  { width: 34, height: 34, borderRadius: 10, backgroundColor: C.gold, alignItems: "center", justifyContent: "center" },
-  updateLabel:    { color: C.gold, fontWeight: "900", fontSize: 13 },
-  updateSublabel: { color: C.muted, fontSize: 11, fontWeight: "600", marginTop: 2 },
-  updateBadge:    { backgroundColor: "rgba(212,175,55,0.15)", borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: "rgba(212,175,55,0.30)" },
-  updateBadgeTxt: { color: C.gold, fontWeight: "900", fontSize: 9, letterSpacing: 0.5 },
-
   // ── Page header ──
   pageHeader: {
     paddingTop: 56,
@@ -551,6 +587,70 @@ const s = StyleSheet.create({
     fontSize: 32,
     fontWeight: "900",
     letterSpacing: 0.2,
+  },
+
+  // ── Premium action row ──
+  premiumActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 12,
+  },
+  premiumIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: C.goldDim,
+    borderWidth: 1.5,
+    borderColor: C.goldBorder,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  premiumLabel: {
+    color: C.gold,
+    fontWeight: "900",
+    fontSize: 14,
+  },
+  premiumSub: {
+    color: C.muted,
+    fontWeight: "600",
+    fontSize: 12,
+    marginTop: 2,
+  },
+  premiumBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: C.goldDim,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+
+  // ── Premium info box ──
+  premiumInfoBox: {
+    flexDirection: "row",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginTop: 4,
+    backgroundColor: "rgba(212,175,55,0.08)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.goldBorder,
+  },
+  premiumInfoTitle: {
+    color: C.gold,
+    fontWeight: "900",
+    fontSize: 13,
+  },
+  premiumInfoText: {
+    color: C.muted,
+    fontWeight: "600",
+    fontSize: 12,
+    lineHeight: 16,
   },
 
   // ── Logout ──
@@ -661,6 +761,14 @@ const s = StyleSheet.create({
   },
   qualityOptionActive: { backgroundColor: C.goldDim, borderColor: C.goldBorder },
   qualityOptionText: { color: C.mutedMed, fontSize: 15, fontWeight: "700" },
+
+  // ── Update row ──
+  updateRow:      { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 13, gap: 10 },
+  updateRowIcon:  { width: 34, height: 34, borderRadius: 10, backgroundColor: C.gold, alignItems: "center", justifyContent: "center" },
+  updateLabel:    { color: C.gold, fontWeight: "900", fontSize: 13 },
+  updateSublabel: { color: C.muted, fontSize: 11, fontWeight: "600", marginTop: 2 },
+  updateBadge:    { backgroundColor: "rgba(212,175,55,0.15)", borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: "rgba(212,175,55,0.30)" },
+  updateBadgeTxt: { color: C.gold, fontWeight: "900", fontSize: 9, letterSpacing: 0.5 },
 
   // ── Toast ──
   toast: { position: "absolute", top: 54, alignSelf: "center", zIndex: 999 },

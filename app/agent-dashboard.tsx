@@ -1,7 +1,10 @@
 // app/agent-dashboard.tsx
 // ✅ RHAZN — Agent Dashboard · Apple-like Premium
 // ✅ PIN RHAZN 4 chiffres au démarrage
-// ✅ Design cohérent WalletControlCenter
+// ✅ CORRECTIONS :
+//    - pendingCount     (CASH) : lit user_withdraw_requests WHERE type='WITHDRAW' AND ed_id=ed.id
+//    - sellPendingCount (TAN)  : lit user_withdraw_requests WHERE type='BUY'      AND ed_id=ed.id
+//    - Realtime écoute user_withdraw_requests (une seule table, toast selon type)
 
 import { Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -73,16 +76,16 @@ function IOSToast({ toast, anim }: {
 
 // ─── Écran PIN ─────────────────────────────────────────────
 function PinScreen({ onSuccess }: { onSuccess: () => void }) {
-  const [pin,       setPin]      = useState("");
-  const [tries,     setTries]    = useState(0);
-  const [error,     setError]    = useState(false);
-  const [errorMsg,  setErrorMsg] = useState("PIN incorrect");
-  const [locked,    setLocked]   = useState(false);
-  const [checking,  setChecking] = useState(false);
+  const [pin,      setPin]      = useState("");
+  const [tries,    setTries]    = useState(0);
+  const [error,    setError]    = useState(false);
+  const [errorMsg, setErrorMsg] = useState("PIN incorrect");
+  const [locked,   setLocked]   = useState(false);
+  const [checking, setChecking] = useState(false);
 
-  const shakeAnim  = useRef(new Animated.Value(0)).current;
-  const fadeAnim   = useRef(new Animated.Value(0)).current;
-  const slideAnim  = useRef(new Animated.Value(20)).current;
+  const shakeAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
 
   useEffect(() => {
     Animated.parallel([
@@ -111,14 +114,11 @@ function PinScreen({ onSuccess }: { onSuccess: () => void }) {
     if (next.length === PIN_LENGTH) {
       setChecking(true);
       try {
-        // ✅ Vérification PIN depuis la table eds (source de vérité)
         const { data: auth } = await supabase.auth.getUser();
         const uid = auth?.user?.id;
-
         if (!uid) {
           setErrorMsg("Session expirée.");
-          triggerShake();
-          setError(true);
+          triggerShake(); setError(true);
           setTimeout(() => { setPin(""); setError(false); }, 700);
           return;
         }
@@ -132,21 +132,16 @@ function PinScreen({ onSuccess }: { onSuccess: () => void }) {
 
         if (!ed) {
           setErrorMsg("Compte agent introuvable.");
-          triggerShake();
-          setError(true);
+          triggerShake(); setError(true);
           setTimeout(() => { setPin(""); setError(false); }, 700);
           return;
         }
 
-        // ✅ Accepte le PIN stocké OU "0000" si agent_pin est NULL (fallback dev)
         const storedPin = ed.agent_pin ?? "0000";
         if (String(storedPin) === String(next) || (!ed.agent_pin && next === "0000")) {
-          // ✅ PIN correct
           onSuccess();
         } else {
-          // ❌ PIN incorrect
-          triggerShake();
-          setError(true);
+          triggerShake(); setError(true);
           const newTries = tries + 1;
           setTries(newTries);
           if (newTries >= MAX_PIN_TRIES) {
@@ -159,8 +154,7 @@ function PinScreen({ onSuccess }: { onSuccess: () => void }) {
         }
       } catch {
         setErrorMsg("Erreur réseau. Réessayez.");
-        triggerShake();
-        setError(true);
+        triggerShake(); setError(true);
         setTimeout(() => { setPin(""); setError(false); }, 700);
       } finally {
         setChecking(false);
@@ -183,45 +177,30 @@ function PinScreen({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <View style={pinStyles.screen}>
-      {/* Halo doré */}
       <View style={pinStyles.halo} pointerEvents="none" />
-
       <Animated.View style={[pinStyles.card, {
         opacity: fadeAnim,
         transform: [{ translateY: slideAnim }, { translateX: shakeAnim }],
       }]}>
-
-        {/* Icône */}
         <View style={pinStyles.iconWrap}>
           <Ionicons name="shield-checkmark" size={36} color={GOLD} />
         </View>
-
         <Text style={pinStyles.title}>Dashboard Agent</Text>
         <Text style={pinStyles.sub}>Entrez votre code PIN RHAZN</Text>
 
-        {/* Points PIN */}
         <View style={pinStyles.dotsRow}>
           {Array.from({ length: PIN_LENGTH }).map((_, i) => (
-            <View
-              key={i}
-              style={[
-                pinStyles.dot,
-                i < pin.length && pinStyles.dotFilled,
-                error && pinStyles.dotError,
-              ]}
-            />
+            <View key={i} style={[
+              pinStyles.dot,
+              i < pin.length && pinStyles.dotFilled,
+              error && pinStyles.dotError,
+            ]} />
           ))}
         </View>
 
-        {/* Message erreur */}
-        {checking && (
-          <ActivityIndicator color={GOLD} size="small" style={{ marginVertical: 6 }} />
-        )}
-        {error && (
-          <Text style={pinStyles.errorTxt}>{errorMsg}</Text>
-        )}
+        {checking && <ActivityIndicator color={GOLD} size="small" style={{ marginVertical: 6 }} />}
+        {error && <Text style={pinStyles.errorTxt}>{errorMsg}</Text>}
 
-        {/* Clavier */}
         {DIGITS.map((row, ri) => (
           <View key={ri} style={pinStyles.keyRow}>
             {row.map((d, di) => (
@@ -240,7 +219,6 @@ function PinScreen({ onSuccess }: { onSuccess: () => void }) {
             ))}
           </View>
         ))}
-
       </Animated.View>
     </View>
   );
@@ -251,24 +229,26 @@ export default function AgentDashboard() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const [pinOk,       setPinOk]       = useState(agentPinStore.isVerified());
-  const [loading,     setLoading]     = useState(true);
-  const [refreshing,  setRefreshing]  = useState(false);
-  const [error,       setError]       = useState<string | null>(null);
+  const [pinOk,      setPinOk]      = useState(agentPinStore.isVerified());
+  const [loading,    setLoading]    = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error,      setError]      = useState<string | null>(null);
 
-  const [agentCode,         setAgentCode]         = useState<string | null>(null);
-  const [tanBalance,        setTanBalance]         = useState(0);
-  const [todayOps,          setTodayOps]           = useState(0);
-  const [todayTan,          setTodayTan]           = useState(0);
-  const [pendingCount,      setPendingCount]       = useState(0);
-  const [sellPendingCount,  setSellPendingCount]   = useState(0);
+  const [agentCode,        setAgentCode]        = useState<string | null>(null);
+  const [tanBalance,       setTanBalance]        = useState(0);
+  const [todayOps,         setTodayOps]          = useState(0);
+  const [todayTan,         setTodayTan]          = useState(0);
+  // ✅ CORRECTION : compteurs alignés sur user_withdraw_requests
+  const [pendingCount,     setPendingCount]      = useState(0); // type='WITHDRAW' → Demandes CASH
+  const [sellPendingCount, setSellPendingCount]  = useState(0); // type='BUY'      → Demandes TAN
+  const [agentName,        setAgentName]         = useState<string | null>(null);
 
-  const [agentName,         setAgentName]          = useState<string | null>(null);
+  // ✅ ed.id stocké pour les compteurs et le realtime
+  const [edId, setEdId] = useState<string | null>(null);
 
-  // Animations staggered
-  const headerFade  = useRef(new Animated.Value(0)).current;
-  const cardAnims   = useRef([0,1,2,3].map(() => new Animated.Value(0))).current;
-  const slideAnims  = useRef([0,1,2,3].map(() => new Animated.Value(20))).current;
+  const headerFade = useRef(new Animated.Value(0)).current;
+  const cardAnims  = useRef([0,1,2,3].map(() => new Animated.Value(0))).current;
+  const slideAnims = useRef([0,1,2,3].map(() => new Animated.Value(20))).current;
 
   const toastAnim = useRef(new Animated.Value(0)).current;
   const [toast, setToast] = useState<{ title: string; sub: string; type: "success"|"error"|"info" } | null>(null);
@@ -283,16 +263,44 @@ export default function AgentDashboard() {
 
   const fmt = (n: number) => Number(n || 0).toLocaleString("fr-FR");
 
-  // ── Guard agent ──────────────────────────────────────────
   const ensureAgent = async (uid: string) => {
     const { data: ed } = await supabase
       .from("eds").select("id")
       .eq("auth_uid", uid).eq("is_active", true).maybeSingle();
-    if (!ed) { router.replace("/"); return false; }
-    return true;
+    if (!ed) { router.replace("/"); return null; }
+    return ed.id as string;
   };
 
-  // ── Load ─────────────────────────────────────────────────
+  // ── Compteurs séparés par type ───────────────────────────
+  const loadPendingCounts = async (currentEdId: string) => {
+    try {
+      // ✅ CORRECTION 1 : Demandes CASH = type='WITHDRAW'
+      const { count: withdrawCount } = await supabase
+        .from("user_withdraw_requests")
+        .select("id", { count: "exact", head: true })
+        .eq("ed_id", currentEdId)
+        .eq("status", "PENDING")
+        .eq("type", "WITHDRAW");
+      setPendingCount(withdrawCount ?? 0);
+    } catch (e) {
+      console.log("❌ pendingCount WITHDRAW:", e);
+    }
+
+    try {
+      // ✅ CORRECTION 2 : Demandes TAN = type='BUY'
+      const { count: buyCount } = await supabase
+        .from("user_withdraw_requests")
+        .select("id", { count: "exact", head: true })
+        .eq("ed_id", currentEdId)
+        .eq("status", "PENDING")
+        .eq("type", "BUY");
+      setSellPendingCount(buyCount ?? 0);
+    } catch (e) {
+      console.log("❌ sellPendingCount BUY:", e);
+    }
+  };
+
+  // ── Load principal ───────────────────────────────────────
   const load = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
@@ -302,8 +310,11 @@ export default function AgentDashboard() {
       const uid = session.session?.user?.id;
       if (!uid) { router.replace("/auth/login"); return; }
 
-      const ok = await ensureAgent(uid);
-      if (!ok) return;
+      const currentEdId = await ensureAgent(uid);
+      if (!currentEdId) return;
+
+      // Stocker ed.id pour le realtime
+      setEdId(currentEdId);
 
       try { await supabase.rpc("ensure_wallet"); } catch { /* ignore */ }
 
@@ -331,41 +342,14 @@ export default function AgentDashboard() {
         .eq("agent_uid", uid).gte("created_at", today.toISOString());
       if (tErr) console.log("❌ agents_transactions:", tErr.message);
 
-      // Demandes en attente — table peut ne pas exister
-           // ── Retraits en attente (bouton Demandes) ──
-      let pendingC = 0;
-      try {
-        const { count } = await supabase
-          .from("agent_requests")
-          .select("id", { count: "exact", head: true })
-          .eq("agent_uid", uid)
-          .eq("status", "PENDING");
-        pendingC = count ?? 0;
-      } catch (e) {
-        console.log("❌ agent_requests (ignoré):", e);
-      }
-
-      // ── Achats TAN en attente (bouton Vendre TAN) ──
-      let sellPendingC = 0;
-      try {
-        const { count } = await supabase
-          .from("agent_sell_requests")
-          .select("id", { count: "exact", head: true })
-          .eq("agent_uid", uid)
-          .eq("status", "PENDING");
-        sellPendingC = count ?? 0;
-      } catch (e) {
-        console.log("❌ agent_sell_requests (ignoré):", e);
-      }
-
-
-           setTanBalance(Number(w?.tan_balance ?? 0));
+      setTanBalance(Number(w?.tan_balance ?? 0));
       setAgentCode((ed as any)?.agent_code ?? null);
       setAgentName(prof?.full_name ?? null);
       setTodayOps(txs?.length ?? 0);
       setTodayTan((txs ?? []).reduce((s: number, t: any) => s + Number(t.tan_amount || 0), 0));
-      setPendingCount(pendingC);
-      setSellPendingCount(sellPendingC);
+
+      // ✅ CORRECTION : compteurs depuis la bonne table avec le bon type
+      await loadPendingCounts(currentEdId);
 
       // Animations entrée
       Animated.timing(headerFade, { toValue: 1, duration: 380, useNativeDriver: true }).start();
@@ -399,22 +383,42 @@ export default function AgentDashboard() {
 
   // ── Realtime ─────────────────────────────────────────────
   useEffect(() => {
-    if (!pinOk) return;
-        const ch = supabase.channel("agent-dash-live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "agent_requests" }, () => {
-        load(true);
-        showToast("Nouveau retrait", "Un client demande un retrait.", "info");
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "agent_sell_requests" }, () => {
-        load(true);
-        showToast("Nouvel achat TAN", "Un client veut acheter du TAN.", "info");
-      })
+    if (!pinOk || !edId) return;
+
+    // ✅ CORRECTION 3 : une seule table 'user_withdraw_requests'
+    // Le payload contient le 'type' pour distinguer BUY vs WITHDRAW
+    const ch = supabase.channel("agent-dash-live")
+      .on(
+        "postgres_changes",
+        {
+          event:  "*",
+          schema: "public",
+          table:  "user_withdraw_requests",
+          filter: `ed_id=eq.${edId}`,
+        },
+        async (payload) => {
+          // ✅ Recharger les deux compteurs à chaque changement
+          await loadPendingCounts(edId);
+
+          // ✅ Toast adapté selon le type de demande
+          const rowType = (payload.new as any)?.type ?? (payload.old as any)?.type;
+          const rowStatus = (payload.new as any)?.status;
+
+          if (rowStatus === "PENDING") {
+            if (rowType === "WITHDRAW") {
+              showToast("💵 Demande de CASH", "Un client demande un retrait en espèces.", "info");
+            } else if (rowType === "BUY") {
+              showToast("🪙 Demande de TAN", "Un client veut acheter du TAN.", "info");
+            }
+          }
+        }
+      )
       .subscribe();
 
     return () => { supabase.removeChannel(ch); };
-  }, [pinOk]);
+  }, [pinOk, edId]);
 
-  // ── PIN non validé → écran PIN ────────────────────────────
+  // ── PIN non validé ────────────────────────────────────────
   if (!pinOk) {
     return <PinScreen onSuccess={() => {
       agentPinStore.verify();
@@ -435,10 +439,9 @@ export default function AgentDashboard() {
   return (
     <View style={styles.screen}>
 
-      {/* ── Toast iOS ──────────────────────────── */}
       <IOSToast toast={toast} anim={toastAnim} />
 
-      {/* ── Header ─────────────────────────────── */}
+      {/* ── Header ── */}
       <Animated.View style={[styles.header, { paddingTop: insets.top + 10, opacity: headerFade }]}>
         <View style={styles.headerLeft}>
           <Image
@@ -469,7 +472,6 @@ export default function AgentDashboard() {
           />
         }
       >
-
         {error && (
           <View style={styles.errorBanner}>
             <Ionicons name="alert-circle-outline" size={16} color={RED} />
@@ -477,7 +479,7 @@ export default function AgentDashboard() {
           </View>
         )}
 
-        {/* ── Wallet TAN ─────────────────────── */}
+        {/* ── Wallet TAN ── */}
         <Animated.View style={{ opacity: cardAnims[0], transform: [{ translateY: slideAnims[0] }] }}>
           <View style={styles.walletCard}>
             <View style={styles.walletTop}>
@@ -489,7 +491,6 @@ export default function AgentDashboard() {
                 <Text style={styles.tanTagTxt}>TAN</Text>
               </View>
             </View>
-            {/* Barre de séparation */}
             <View style={styles.walletSep} />
             <View style={styles.walletStatsRow}>
               <View style={styles.walletStat}>
@@ -502,15 +503,18 @@ export default function AgentDashboard() {
                 <Text style={styles.walletStatLbl}>TAN traités</Text>
               </View>
               <View style={styles.walletStatSep} />
+              {/* ✅ Badge total des 2 types de demandes en attente */}
               <View style={styles.walletStat}>
-                <Text style={[styles.walletStatVal, pendingCount > 0 && { color: ORANGE }]}>{pendingCount}</Text>
+                <Text style={[styles.walletStatVal, (pendingCount + sellPendingCount) > 0 && { color: ORANGE }]}>
+                  {pendingCount + sellPendingCount}
+                </Text>
                 <Text style={styles.walletStatLbl}>En attente</Text>
               </View>
             </View>
           </View>
         </Animated.View>
 
-        {/* ── Identité Agent ─────────────────── */}
+        {/* ── Identité Agent ── */}
         <Animated.View style={{ opacity: cardAnims[1], transform: [{ translateY: slideAnims[1] }] }}>
           <View style={styles.card}>
             <View style={styles.cardHeader}>
@@ -522,13 +526,10 @@ export default function AgentDashboard() {
 
             {agentCode ? (
               <View style={{ alignItems: "center", gap: 16 }}>
-                {/* Code Agent */}
                 <View style={styles.codeBox}>
                   <Text style={styles.codeLbl}>Code Agent</Text>
                   <Text style={styles.codeVal}>{agentCode}</Text>
                 </View>
-
-                {/* Boutons Copier + WhatsApp */}
                 <View style={styles.codeActions}>
                   <TouchableOpacity
                     style={styles.copyBtn}
@@ -546,11 +547,7 @@ export default function AgentDashboard() {
                     activeOpacity={0.8}
                     onPress={() => {
                       Share.share({
-                        message: `🛡️ Mon code Agent RHAZN : *${agentCode}*
-
-Présentez ce code à l'utisateur RHAZN pour acheter ou retirer du TAN.
-
-— RHAZN · Sanctuaire du Mérite`,
+                        message: `🛡️ Mon code Agent RHAZN : *${agentCode}*\n\nPrésentez ce code à l'utilisateur RHAZN pour acheter ou retirer du TAN.\n\n— RHAZN · Sanctuaire du Mérite`,
                         title: "Code Agent RHAZN",
                       });
                     }}
@@ -559,16 +556,12 @@ Présentez ce code à l'utisateur RHAZN pour acheter ou retirer du TAN.
                     <Text style={styles.waBtnTxt}>Partager</Text>
                   </TouchableOpacity>
                 </View>
-
-                {/* QR Code Placeholder */}
                 <View style={styles.qrWrap}>
                   <View style={styles.qrPlaceholder}>
                     <Ionicons name="qr-code-outline" size={48} color={MUTED} />
                   </View>
                 </View>
-                <Text style={styles.qrHint}>
-                  Code QR disponible dans la version complète
-                </Text>
+                <Text style={styles.qrHint}>Code QR disponible dans la version complète</Text>
               </View>
             ) : (
               <View style={styles.emptyCode}>
@@ -579,7 +572,7 @@ Présentez ce code à l'utisateur RHAZN pour acheter ou retirer du TAN.
           </View>
         </Animated.View>
 
-        {/* ── Actions rapides ────────────────── */}
+        {/* ── Actions rapides ── */}
         <Animated.View style={{ opacity: cardAnims[2], transform: [{ translateY: slideAnims[2] }] }}>
           <View style={styles.card}>
             <View style={styles.cardHeader}>
@@ -590,8 +583,9 @@ Présentez ce code à l'utisateur RHAZN pour acheter ou retirer du TAN.
             </View>
 
             <View style={styles.actionsGrid}>
-              {/* Vendre TAN — or */}
-                            <TouchableOpacity
+
+              {/* ✅ Demandes TAN (Achat) — badge sellPendingCount (type='BUY') */}
+              <TouchableOpacity
                 style={styles.actionGold}
                 onPress={() => router.push("/agent-sell-tan")}
                 activeOpacity={0.85}
@@ -607,11 +601,10 @@ Présentez ce code à l'utisateur RHAZN pour acheter ou retirer du TAN.
                   </View>
                 )}
                 <Text style={styles.actionGoldTxt}>Demandes de TAN</Text>
-                <Text style={styles.actionGoldSub}>Achats TAN Utlisateurs</Text>
+                <Text style={styles.actionGoldSub}>Achats TAN Utilisateurs</Text>
               </TouchableOpacity>
 
-
-              {/* Demandes — avec badge */}
+              {/* ✅ Demandes CASH (Retrait) — badge pendingCount (type='WITHDRAW') */}
               <TouchableOpacity
                 style={styles.actionCard}
                 onPress={() => router.push("/agent-request")}
@@ -626,7 +619,7 @@ Présentez ce code à l'utisateur RHAZN pour acheter ou retirer du TAN.
                   </View>
                 )}
                 <Text style={styles.actionCardTxt}>Demandes de CASH</Text>
-                <Text style={styles.actionCardSub}>Utlisateurs en attente</Text>
+                <Text style={styles.actionCardSub}>Utilisateurs en attente</Text>
               </TouchableOpacity>
             </View>
 
@@ -676,7 +669,7 @@ Présentez ce code à l'utisateur RHAZN pour acheter ou retirer du TAN.
           </View>
         </Animated.View>
 
-        {/* ── Footer sécurité ────────────────── */}
+        {/* ── Footer sécurité ── */}
         <Animated.View style={{ opacity: cardAnims[3] }}>
           <View style={styles.securityRow}>
             <Ionicons name="lock-closed-outline" size={12} color={MUTED} />
@@ -694,89 +687,65 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
 
-  // Header
-  header:      { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingBottom: 16 },
-  headerLeft:  { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
-  logo:        { width: 38, height: 38, borderRadius: 10 },
-  hGreet:      { color: MUTED, fontSize: 12, fontWeight: "600" },
-  hTitle:      { color: TEXT, fontSize: 20, fontWeight: "900", marginTop: 2 },
-  hSub:        { color: MUTED, fontSize: 11, marginTop: 2 },
-  agentBadge:  { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: GOLD, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7 },
+  header:        { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingBottom: 16 },
+  headerLeft:    { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
+  logo:          { width: 38, height: 38, borderRadius: 10 },
+  hGreet:        { color: MUTED, fontSize: 12, fontWeight: "600" },
+  hTitle:        { color: TEXT, fontSize: 20, fontWeight: "900", marginTop: 2 },
+  hSub:          { color: MUTED, fontSize: 11, marginTop: 2 },
+  agentBadge:    { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: GOLD, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7 },
   agentBadgeTxt: { color: "#000", fontWeight: "900", fontSize: 11 },
 
-  // Wallet card
-  walletCard: {
-    marginHorizontal: 16, marginBottom: 14,
-    backgroundColor: CARD, borderRadius: 24, padding: 20,
-    borderWidth: 1, borderColor: GOLD_BD,
-    shadowColor: GOLD, shadowOpacity: 0.10, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 6,
-  },
-  walletTop:    { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 },
-  walletLbl:    { color: MUTED, fontSize: 12, fontWeight: "700" },
-  walletVal:    { color: GOLD, fontSize: 34, fontWeight: "900", marginTop: 4 },
-  tanTag:       { backgroundColor: GOLD_DIM, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: GOLD_BD },
-  tanTagTxt:    { color: GOLD, fontWeight: "900", fontSize: 14, letterSpacing: 1 },
-  walletSep:    { height: 1, backgroundColor: SOFT, marginBottom: 14 },
+  walletCard:     { marginHorizontal: 16, marginBottom: 14, backgroundColor: CARD, borderRadius: 24, padding: 20, borderWidth: 1, borderColor: GOLD_BD, shadowColor: GOLD, shadowOpacity: 0.10, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 6 },
+  walletTop:      { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 },
+  walletLbl:      { color: MUTED, fontSize: 12, fontWeight: "700" },
+  walletVal:      { color: GOLD, fontSize: 34, fontWeight: "900", marginTop: 4 },
+  tanTag:         { backgroundColor: GOLD_DIM, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: GOLD_BD },
+  tanTagTxt:      { color: GOLD, fontWeight: "900", fontSize: 14, letterSpacing: 1 },
+  walletSep:      { height: 1, backgroundColor: SOFT, marginBottom: 14 },
   walletStatsRow: { flexDirection: "row" },
-  walletStat:   { flex: 1, alignItems: "center", gap: 4 },
-  walletStatVal:{ color: TEXT, fontWeight: "900", fontSize: 18 },
-  walletStatLbl:{ color: MUTED, fontSize: 10, fontWeight: "700" },
-  walletStatSep:{ width: 1, backgroundColor: SOFT, marginHorizontal: 4 },
+  walletStat:     { flex: 1, alignItems: "center", gap: 4 },
+  walletStatVal:  { color: TEXT, fontWeight: "900", fontSize: 18 },
+  walletStatLbl:  { color: MUTED, fontSize: 10, fontWeight: "700" },
+  walletStatSep:  { width: 1, backgroundColor: SOFT, marginHorizontal: 4 },
 
-  // Card générique
-  card: {
-    marginHorizontal: 16, marginBottom: 14,
-    backgroundColor: CARD, borderRadius: 20, padding: 18,
-    borderWidth: 1, borderColor: SOFT,
-  },
-  cardHeader:  { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 },
-  cardIconWrap:{ width: 36, height: 36, borderRadius: 11, backgroundColor: GOLD_DIM, borderWidth: 1, borderColor: GOLD_BD, alignItems: "center", justifyContent: "center" },
-  cardTitle:   { color: TEXT, fontWeight: "800", fontSize: 15 },
+  card:         { marginHorizontal: 16, marginBottom: 14, backgroundColor: CARD, borderRadius: 20, padding: 18, borderWidth: 1, borderColor: SOFT },
+  cardHeader:   { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 },
+  cardIconWrap: { width: 36, height: 36, borderRadius: 11, backgroundColor: GOLD_DIM, borderWidth: 1, borderColor: GOLD_BD, alignItems: "center", justifyContent: "center" },
+  cardTitle:    { color: TEXT, fontWeight: "800", fontSize: 15 },
 
-  // Code agent
-  codeBox:  { backgroundColor: BG, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 20, borderWidth: 1, borderColor: SOFT, alignItems: "center", width: "100%" },
-  codeLbl:  { color: MUTED, fontSize: 11, fontWeight: "700" },
-  codeVal:  { color: GOLD, fontSize: 22, fontWeight: "900", letterSpacing: 2, marginTop: 4 },
+  codeBox:     { backgroundColor: BG, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 20, borderWidth: 1, borderColor: SOFT, alignItems: "center", width: "100%" },
+  codeLbl:     { color: MUTED, fontSize: 11, fontWeight: "700" },
+  codeVal:     { color: GOLD, fontSize: 22, fontWeight: "900", letterSpacing: 2, marginTop: 4 },
   codeActions: { flexDirection: "row", gap: 10, width: "100%" },
-  copyBtn:  { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, backgroundColor: GOLD_DIM, borderRadius: 14, paddingVertical: 12, borderWidth: 1, borderColor: GOLD_BD },
-  copyBtnTxt: { color: GOLD, fontWeight: "800", fontSize: 13 },
-  waBtn:    { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, backgroundColor: "rgba(37,211,102,0.10)", borderRadius: 14, paddingVertical: 12, borderWidth: 1, borderColor: "rgba(37,211,102,0.25)" },
-  waBtnTxt: { color: "#25D366", fontWeight: "800", fontSize: 13 },
-  qrWrap:   { backgroundColor: CARD, padding: 14, borderRadius: 18, borderWidth: 1, borderColor: SOFT, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
-  qrPlaceholder: { width: 150, height: 150, alignItems: "center", justifyContent: "center", backgroundColor: BG, borderRadius: 14, borderWidth: 1, borderColor: SOFT },
-  qrHint:   { color: MUTED, fontSize: 11, fontWeight: "600" },
-  emptyCode:{ alignItems: "center", paddingVertical: 20 },
+  copyBtn:     { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, backgroundColor: GOLD_DIM, borderRadius: 14, paddingVertical: 12, borderWidth: 1, borderColor: GOLD_BD },
+  copyBtnTxt:  { color: GOLD, fontWeight: "800", fontSize: 13 },
+  waBtn:       { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, backgroundColor: "rgba(37,211,102,0.10)", borderRadius: 14, paddingVertical: 12, borderWidth: 1, borderColor: "rgba(37,211,102,0.25)" },
+  waBtnTxt:    { color: "#25D366", fontWeight: "800", fontSize: 13 },
+  qrWrap:      { backgroundColor: CARD, padding: 14, borderRadius: 18, borderWidth: 1, borderColor: SOFT, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
+  qrPlaceholder:{ width: 150, height: 150, alignItems: "center", justifyContent: "center", backgroundColor: BG, borderRadius: 14, borderWidth: 1, borderColor: SOFT },
+  qrHint:      { color: MUTED, fontSize: 11, fontWeight: "600" },
+  emptyCode:   { alignItems: "center", paddingVertical: 20 },
 
-  // Actions
-  actionsGrid:  { flexDirection: "row", gap: 10 },
-  changePinBtn: { flexDirection: "row", alignItems: "center", gap: 14, backgroundColor: BG, borderRadius: 18, padding: 16, borderWidth: 1, borderColor: SOFT, marginTop: 14 },
-  actionGold: {
-    flex: 1, backgroundColor: GOLD, borderRadius: 18, padding: 16,
-    shadowColor: GOLD, shadowOpacity: 0.25, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 6,
-  },
-  actionIconGold: { width: 40, height: 40, borderRadius: 12, backgroundColor: "rgba(0,0,0,0.15)", alignItems: "center", justifyContent: "center", marginBottom: 10 },
-  actionGoldTxt:  { color: "#000", fontWeight: "900", fontSize: 13 },
-  actionGoldSub:  { color: "rgba(0,0,0,0.55)", fontSize: 11, marginTop: 2 },
-
-  actionCard: {
-    flex: 1, backgroundColor: BG, borderRadius: 18, padding: 16,
-    borderWidth: 1, borderColor: SOFT, position: "relative",
-  },
+  actionsGrid:   { flexDirection: "row", gap: 10 },
+  changePinBtn:  { flexDirection: "row", alignItems: "center", gap: 14, backgroundColor: BG, borderRadius: 18, padding: 16, borderWidth: 1, borderColor: SOFT, marginTop: 14 },
+  actionGold:    { flex: 1, backgroundColor: GOLD, borderRadius: 18, padding: 16, shadowColor: GOLD, shadowOpacity: 0.25, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 6 },
+  actionIconGold:{ width: 40, height: 40, borderRadius: 12, backgroundColor: "rgba(0,0,0,0.15)", alignItems: "center", justifyContent: "center", marginBottom: 10 },
+  actionGoldTxt: { color: "#000", fontWeight: "900", fontSize: 13 },
+  actionGoldSub: { color: "rgba(0,0,0,0.55)", fontSize: 11, marginTop: 2 },
+  actionCard:    { flex: 1, backgroundColor: BG, borderRadius: 18, padding: 16, borderWidth: 1, borderColor: SOFT, position: "relative" },
   actionIcon:    { width: 40, height: 40, borderRadius: 12, backgroundColor: GOLD_DIM, borderWidth: 1, borderColor: GOLD_BD, alignItems: "center", justifyContent: "center", marginBottom: 10 },
   actionCardTxt: { color: TEXT, fontWeight: "800", fontSize: 13 },
   actionCardSub: { color: MUTED, fontSize: 11, marginTop: 2 },
   actionBadge:   { position: "absolute", top: 10, right: 10, backgroundColor: RED, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 3, minWidth: 22, alignItems: "center" },
   actionBadgeTxt:{ color: CARD, fontSize: 10, fontWeight: "900" },
 
-  // Erreur
   errorBanner: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: `${RED}12`, borderRadius: 12, marginHorizontal: 16, marginBottom: 8, padding: 12, borderWidth: 1, borderColor: `${RED}25` },
   errorTxt:    { color: RED, fontSize: 13, fontWeight: "600", flex: 1 },
 
-  // Sécurité footer
   securityRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingBottom: 16, paddingTop: 4 },
   securityTxt: { color: MUTED, fontSize: 11, fontWeight: "600" },
 
-  // Toast iOS
   iosToast:      { position: "absolute", top: Platform.OS === "ios" ? 56 : 28, left: 14, right: 14, zIndex: 9999, backgroundColor: CARD, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14, flexDirection: "row", alignItems: "center", gap: 14, shadowColor: "#000", shadowOpacity: 0.16, shadowRadius: 20, shadowOffset: { width: 0, height: 6 }, elevation: 14, borderWidth: 1, borderColor: SOFT },
   iosToastIcon:  { width: 42, height: 42, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   iosToastTitle: { color: TEXT, fontWeight: "800", fontSize: 14 },
@@ -787,27 +756,16 @@ const styles = StyleSheet.create({
 const pinStyles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#000", alignItems: "center", justifyContent: "center" },
   halo:   { position: "absolute", top: -80, right: -80, width: 260, height: 260, borderRadius: 130, backgroundColor: GOLD_DIM },
-
-  card: {
-    width: "88%", backgroundColor: "#0D0D0D",
-    borderRadius: 28, padding: 28, alignItems: "center",
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.08)",
-    shadowColor: GOLD, shadowOpacity: 0.08, shadowRadius: 30, shadowOffset: { width: 0, height: 12 },
-  },
-
-  iconWrap: { width: 72, height: 72, borderRadius: 22, backgroundColor: GOLD_DIM, borderWidth: 1.5, borderColor: GOLD_BD, alignItems: "center", justifyContent: "center", marginBottom: 18 },
-
+  card:   { width: "88%", backgroundColor: "#0D0D0D", borderRadius: 28, padding: 28, alignItems: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", shadowColor: GOLD, shadowOpacity: 0.08, shadowRadius: 30, shadowOffset: { width: 0, height: 12 } },
+  iconWrap:{ width: 72, height: 72, borderRadius: 22, backgroundColor: GOLD_DIM, borderWidth: 1.5, borderColor: GOLD_BD, alignItems: "center", justifyContent: "center", marginBottom: 18 },
   title:   { color: "#FFF", fontSize: 20, fontWeight: "900", marginBottom: 6, textAlign: "center" },
   sub:     { color: "rgba(255,255,255,0.50)", fontSize: 13, fontWeight: "600", textAlign: "center", marginBottom: 24 },
-
   dotsRow: { flexDirection: "row", gap: 16, marginBottom: 10 },
   dot:     { width: 14, height: 14, borderRadius: 7, backgroundColor: "rgba(255,255,255,0.15)", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.20)" },
   dotFilled:{ backgroundColor: GOLD, borderColor: GOLD },
-  dotError: { backgroundColor: RED, borderColor: RED },
-
+  dotError: { backgroundColor: RED,  borderColor: RED },
   errorTxt: { color: RED, fontSize: 12, fontWeight: "700", marginBottom: 8, textAlign: "center" },
-
-  keyRow: { flexDirection: "row", gap: 14, marginTop: 14 },
-  key:    { width: 70, height: 70, borderRadius: 20, backgroundColor: "#1A1A1A", borderWidth: 1, borderColor: "rgba(255,255,255,0.10)", alignItems: "center", justifyContent: "center" },
-  keyTxt: { color: "#FFF", fontSize: 24, fontWeight: "700" },
+  keyRow:  { flexDirection: "row", gap: 14, marginTop: 14 },
+  key:     { width: 70, height: 70, borderRadius: 20, backgroundColor: "#1A1A1A", borderWidth: 1, borderColor: "rgba(255,255,255,0.10)", alignItems: "center", justifyContent: "center" },
+  keyTxt:  { color: "#FFF", fontSize: 24, fontWeight: "700" },
 });

@@ -1,86 +1,62 @@
-// hooks/useSoftDelete.ts
-// ✅ Hook universel — remplace TOUS les .delete() de l'app
-// Usage : const { softDelete } = useSoftDelete();
-//         await softDelete(id, "PRODUCT" | "SUSPENTZ");
-
-import * as Haptics from "expo-haptics";
-import { Alert } from "react-native";
-import { supabase } from "../lib/supabase";
-
-export type SoftDeleteType = "PRODUCT" | "SUSPENTZ" | "PUBLICATION";
+import { supabase } from "@/lib/supabase";
 
 export function useSoftDelete() {
-
-  const softDelete = async (
-    contentId:   string,
-    contentType: SoftDeleteType,
-    title?:      string,
-    options?: {
-      confirm?:  boolean;
-      onSuccess?: () => void;
-      onError?:  (msg: string) => void;
-    }
+  const supremeDelete = async (
+    contentId: string,
+    contentType: "PRODUCT" | "SUSPENTZ",
+    contentTitle?: string | null
   ): Promise<boolean> => {
+    try {
+      const { data, error } = await supabase.rpc(
+        "rz_supreme_delete_product",
+        { p_content_id: contentId }
+      );
 
-    const { confirm = true, onSuccess, onError } = options ?? {};
-
-    const doDelete = async (): Promise<boolean> => {
-      const { data, error } = await supabase.rpc("soft_delete_content", {
-        p_content_id:   contentId,
-        p_content_type: contentType,
-      });
-
-      if (error || !data?.success) {
-        const msg = error?.message || data?.error || "Suppression impossible.";
-        onError?.(msg);
+      if (error) {
+        console.error("❌ Supreme delete error:", error.message);
         return false;
       }
 
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      onSuccess?.();
+      if (data?.success === false) {
+        console.error("❌ Supreme delete failed:", data.error);
+        return false;
+      }
+
+      console.log(`✅ ${contentTitle || contentId} supprimé par Supreme`, data);
       return true;
-    };
-
-    if (!confirm) return doDelete();
-
-    return new Promise((resolve) => {
-      Alert.alert(
-        "Mettre à la corbeille ?",
-        `"${title ?? "Cet élément"}" sera déplacé dans la corbeille. Vous pourrez le restaurer dans 30 jours.`,
-        [
-          { text: "Annuler", style: "cancel", onPress: () => resolve(false) },
-          { text: "Mettre à la corbeille", style: "destructive", onPress: async () => {
-            const result = await doDelete();
-            resolve(result);
-          }},
-        ]
-      );
-    });
+    } catch (err) {
+      console.error("❌ Supreme delete exception:", err);
+      return false;
+    }
   };
 
-  const supremeDelete = async (
-    contentId:   string,
-    contentType: SoftDeleteType,
-    title?:      string,
+  const ownerDelete = async (
+    contentId: string,
+    contentType: "PRODUCT" | "SUSPENTZ" | "PUBLICATION"
   ): Promise<boolean> => {
-    return new Promise((resolve) => {
-      Alert.alert(
-        "⚡ Supreme — Supprimer",
-        `"${title ?? "Cet élément"}" sera déplacé dans la corbeille.`,
-        [
-          { text: "Annuler", style: "cancel", onPress: () => resolve(false) },
-          { text: "Supprimer", style: "destructive", onPress: async () => {
-            const { data } = await supabase.rpc("supreme_soft_delete", {
-              p_content_id:   contentId,
-              p_content_type: contentType,
-            });
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-            resolve(data?.success ?? false);
-          }},
-        ]
-      );
-    });
+    try {
+      const { data, error } = await supabase.rpc("soft_delete_content", {
+        p_content_id: contentId,
+        p_content_type: contentType,
+      });
+
+      if (error) {
+        console.error("❌ Owner delete error:", error.message);
+        return false;
+      }
+
+      if (data?.success === false) {
+        console.error("❌ Owner delete failed:", data.error);
+        return false;
+      }
+
+      console.log(`✅ ${contentId} supprimé par propriétaire`, data);
+      return true;
+    } catch (err) {
+      console.error("❌ Owner delete exception:", err);
+      return false;
+    }
   };
 
-  return { softDelete, supremeDelete };
+  return { supremeDelete, ownerDelete };
 }

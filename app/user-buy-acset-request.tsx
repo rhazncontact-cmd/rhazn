@@ -1,8 +1,6 @@
 // app/user-buy-tan-request.tsx
 // ✅ RHAZN — Acheter du TAN • Apple-like Premium
-// ✅ Même architecture que user-withdraw-request.tsx
-// ✅ Toast entrant + Modal succès + Card HTG preview
-// ✅ ZERO débit wallet ici
+// ✅ CORRECTION : insert type='BUY' pour séparer des demandes de retrait
 
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -145,20 +143,20 @@ function SuccessModal({ visible, tan, htg, onClose }: { visible: boolean; tan: n
 }
 
 const sm = StyleSheet.create({
-  overlay:     { flex: 1, backgroundColor: "rgba(0,0,0,0.65)", alignItems: "center", justifyContent: "center" },
-  card:        { width: "85%", maxWidth: 360, backgroundColor: C.card, borderRadius: 28, padding: 28, alignItems: "center", borderWidth: 1, borderColor: C.border, shadowColor: "#000", shadowOpacity: 0.4, shadowRadius: 40, shadowOffset: { width: 0, height: 20 }, elevation: 30 },
-  iconWrap:    { width: 80, height: 80, borderRadius: 40, backgroundColor: C.greenDim, borderWidth: 1.5, borderColor: C.greenBorder, alignItems: "center", justifyContent: "center", marginBottom: 16 },
-  title:       { color: C.white, fontSize: 20, fontWeight: "900", textAlign: "center" },
-  sub:         { color: C.muted, fontSize: 13, fontWeight: "600", textAlign: "center", marginTop: 6, lineHeight: 19 },
-  divider:     { width: "100%", height: 1, backgroundColor: C.hairline, marginVertical: 20 },
-  amountRow:   { flexDirection: "row", width: "100%" },
-  amountBlock: { flex: 1, alignItems: "center", gap: 3 },
-  amountSep:   { width: 1, backgroundColor: C.hairline, marginHorizontal: 12 },
-  amountLabel: { color: C.muted, fontSize: 10, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5 },
-  amountValue: { color: C.white, fontSize: 22, fontWeight: "900" },
+  overlay:        { flex: 1, backgroundColor: "rgba(0,0,0,0.65)", alignItems: "center", justifyContent: "center" },
+  card:           { width: "85%", maxWidth: 360, backgroundColor: C.card, borderRadius: 28, padding: 28, alignItems: "center", borderWidth: 1, borderColor: C.border, shadowColor: "#000", shadowOpacity: 0.4, shadowRadius: 40, shadowOffset: { width: 0, height: 20 }, elevation: 30 },
+  iconWrap:       { width: 80, height: 80, borderRadius: 40, backgroundColor: C.greenDim, borderWidth: 1.5, borderColor: C.greenBorder, alignItems: "center", justifyContent: "center", marginBottom: 16 },
+  title:          { color: C.white, fontSize: 20, fontWeight: "900", textAlign: "center" },
+  sub:            { color: C.muted, fontSize: 13, fontWeight: "600", textAlign: "center", marginTop: 6, lineHeight: 19 },
+  divider:        { width: "100%", height: 1, backgroundColor: C.hairline, marginVertical: 20 },
+  amountRow:      { flexDirection: "row", width: "100%" },
+  amountBlock:    { flex: 1, alignItems: "center", gap: 3 },
+  amountSep:      { width: 1, backgroundColor: C.hairline, marginHorizontal: 12 },
+  amountLabel:    { color: C.muted, fontSize: 10, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5 },
+  amountValue:    { color: C.white, fontSize: 22, fontWeight: "900" },
   amountCurrency: { color: C.muted, fontSize: 11, fontWeight: "700" },
-  btn:         { marginTop: 24, width: "100%", backgroundColor: C.gold, borderRadius: 18, paddingVertical: 16, alignItems: "center", shadowColor: C.gold, shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 8 },
-  btnTxt:      { color: "#000", fontWeight: "900", fontSize: 16 },
+  btn:            { marginTop: 24, width: "100%", backgroundColor: C.gold, borderRadius: 18, paddingVertical: 16, alignItems: "center", shadowColor: C.gold, shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 8 },
+  btnTxt:         { color: "#000", fontWeight: "900", fontSize: 16 },
 });
 
 // ── ROW ──
@@ -224,8 +222,15 @@ export default function UserBuyTanRequest() {
       if (!authData?.user) { toast.show("error", "Session expirée", "Reconnectez-vous."); return; }
       const { data: ed, error: edErr } = await supabase.from("eds").select("id,is_active").eq("id", ed_id).single();
       if (edErr || !ed || ed.is_active === false) { toast.show("error", "Agent inactif", "Choisissez un autre agent."); return; }
+
+      // ✅ CORRECTION : type='BUY' pour séparer des demandes de retrait (type='WITHDRAW')
       const { error } = await supabase.from("user_withdraw_requests").insert({
-        user_uid: authData.user.id, ed_id, amount_tan: tanAmount, status: "PENDING", note: null,
+        user_uid:   authData.user.id,
+        ed_id,
+        amount_tan: tanAmount,
+        status:     "PENDING",
+        type:       "BUY",
+        note:       null,
       });
       if (error) { toast.show("error", "Erreur système", error.message); return; }
       setSuccessVisible(true);
@@ -254,7 +259,6 @@ export default function UserBuyTanRequest() {
           contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 140 + insets.bottom }}
           keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
         >
-
           {/* Card Agent */}
           <View style={s.card}>
             <View style={s.cardTitleRow}>

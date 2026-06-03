@@ -59,7 +59,7 @@ type Dossier = {
   id:                string;
   title:             string | null;
   category_code:     string;
-  product_type:      string | null;
+  content_type:      string | null;
   media_path:        string | null;
   cadna_status:      CadnaStatus;
   created_at:        string;
@@ -416,7 +416,7 @@ function DossierDetailModal({ dossier, supremeUid, onClose, onApprove, onReject,
                 <Text style={dm.title} numberOfLines={2}>{dossier.title || "Sans titre"}</Text>
                 <View style={{ flexDirection: "row", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
                   <View style={dm.catBadge}><Text style={dm.catBadgeTxt}>{dossier.category_code}</Text></View>
-                  {dossier.product_type && <View style={dm.typeBadge}><Text style={dm.typeBadgeTxt}>{dossier.product_type}</Text></View>}
+                  {dossier.content_type && <View style={dm.typeBadge}><Text style={dm.typeBadgeTxt}>{dossier.content_type}</Text></View>}
                   {locked && <View style={dm.lockBadge}><Ionicons name="lock-closed" size={9} color={PURPLE} /><Text style={dm.lockBadgeTxt}>SUPREME</Text></View>}
                 </View>
               </View>
@@ -681,16 +681,16 @@ function Screen() {
     })();
   }, []);
 
-  const loadCounts = async () => {
-    const [{ count: p }, { count: a }, { count: r }] = await Promise.all([
-      supabase.from("store_products").select("*", { count: "exact", head: true }).eq("cadna_status", "pending"),
-      supabase.from("store_products").select("*", { count: "exact", head: true }).eq("cadna_status", "approved"),
-      supabase.from("store_products").select("*", { count: "exact", head: true }).eq("cadna_status", "rejected"),
-    ]);
-    setCountPending(p ?? 0);
-    setCountApproved(a ?? 0);
-    setCountRejected(r ?? 0);
-  };
+ const loadCounts = async () => {
+  const [{ count: p }, { count: a }, { count: r }] = await Promise.all([
+    supabase.from("store_products").select("*", { count: "exact", head: true }).eq("cadna_status", "pending").is("deleted_at", null),
+    supabase.from("store_products").select("*", { count: "exact", head: true }).eq("cadna_status", "approved").is("deleted_at", null),
+    supabase.from("store_products").select("*", { count: "exact", head: true }).eq("cadna_status", "rejected").is("deleted_at", null),
+  ]);
+  setCountPending(p ?? 0);
+  setCountApproved(a ?? 0);
+  setCountRejected(r ?? 0);
+};
 
   const loadRows = async () => {
     const { data, error } = await supabase.rpc("rz_get_all_cadna_products", { p_status: tab });
@@ -764,7 +764,10 @@ function Screen() {
 
   // ✅ FIX 1+2 : executeSupremeAction — UID pur + error check
   const executeSupremeAction = async () => {
-    if (!supremeAction) return;
+  if (!supremeAction) return;
+  console.log("🔥 ACTION:", supremeAction);
+  console.log("🔥 TARGET:", supremeTarget?.id);
+  console.log("🔥 SELECTED:", selIds.size);
     setSupremeBusy(true);
     const { data: sessionData } = await supabase.auth.getSession();
     const uid = sessionData?.session?.user?.id;
@@ -835,8 +838,12 @@ function Screen() {
     }
 
     setSupremeTarget(null);
-    setSupremeAction(null);
-    load();
+setSupremeAction(null);
+
+// ✅ Recharger avec délai plus long
+setTimeout(() => {
+  load();
+}, 1000);  // ← Augmente à 1000ms
   };
 
 

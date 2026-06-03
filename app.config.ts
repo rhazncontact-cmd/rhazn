@@ -2,7 +2,7 @@ import "dotenv/config";
 import { ExpoConfig } from "expo/config";
 
 const APP_ID = "com.rhzn.dev";
-const APP_VERSION = "1.3.6"; // Version mise à jour
+const APP_VERSION = "1.3.8"; // Version mise à jour
 
 export default (): ExpoConfig => {
   const ENV = process.env.EXPO_PUBLIC_ENV || "production";

@@ -77,7 +77,7 @@ const TABS_VISIBLE: Tab[] = [
 
   { key: "notifs",   label: "Notifs",     icon: "notifications-outline", iconFocused: "notifications", route: "/user-notifications" },
   { key: "publish",  label: "Publier",    icon: "add-circle-outline",    iconFocused: "add-circle",    route: "__publish__"         },
-  { key: "channel",  label: "Channel",    icon: "tv-outline",            iconFocused: "tv",            route: "/rz-channel"         },
+  { key: "channel",  label: "Store",      icon: "bag-handle-outline",    iconFocused: "bag-handle",    route: "/rz-channel"         },
   { key: "settings", label: "Paramètres", icon: "settings-outline",      iconFocused: "settings",      route: "/user-settings"      },
 ];
 

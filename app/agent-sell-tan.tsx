@@ -1,8 +1,7 @@
 // app/agent-sell-tan.tsx
 // ✅ RHAZN — Agent Sell TAN · Apple-like Premium
 // ✅ Nouvelle logique : 1 TAN = 10 HTG — pas de commission à l'achat
-// ✅ Commission UNIQUEMENT sur les retraits (15% RHAZN + 5% Agent)
-// ✅ L'utilisateur reçoit exactement le nombre de TAN demandé
+// ✅ CORRECTION : query filtre type='BUY' — n'affiche que les demandes d'achat
 
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
@@ -42,9 +41,8 @@ const RED      = "#FF3B30";
 const ORANGE   = "#FF9500";
 const BLUE     = "#007AFF";
 
-// ✅ Nouvelle logique tarifaire officielle RHAZN
-const TAN_TO_HTG             = 10;    // 1 TAN = 10 HTG
-const TAN_TO_USD             = 0.05;  // 1 TAN = 0.05 USD
+const TAN_TO_HTG             = 10;
+const TAN_TO_USD             = 0.05;
 const REQUEST_EXPIRY_SECONDS = 100;
 
 // ─── Types ──────────────────────────────────────────────────
@@ -144,7 +142,6 @@ function RequestCard({ item, seconds, isGlow, onValidate }: {
   isGlow: boolean;
   onValidate: () => void;
 }) {
-  // ✅ Montants calculés avec le vrai taux
   const htgAmount = item.amount_tan * TAN_TO_HTG;
   const usdAmount = (item.amount_tan * TAN_TO_USD).toFixed(2);
 
@@ -168,13 +165,10 @@ function RequestCard({ item, seconds, isGlow, onValidate }: {
 
   return (
     <Animated.View style={[styles.card, { borderColor }]}>
-
-      {/* Barre expiration */}
       <View style={styles.timerTrack}>
         <View style={[styles.timerFill, { width: `${pct}%` as any, backgroundColor: urgentColor }]} />
       </View>
 
-      {/* Header — montant TAN */}
       <View style={styles.cardHead}>
         <View style={styles.cardLeft}>
           <Text style={styles.cardAmount}>{item.amount_tan.toLocaleString("fr-FR")}</Text>
@@ -186,7 +180,6 @@ function RequestCard({ item, seconds, isGlow, onValidate }: {
         </View>
       </View>
 
-      {/* ✅ Grille prix : HTG + USD côte à côte */}
       <View style={styles.priceGrid}>
         <View style={styles.priceBoxGreen}>
           <View style={styles.priceIconRow}>
@@ -208,7 +201,6 @@ function RequestCard({ item, seconds, isGlow, onValidate }: {
         </View>
       </View>
 
-      {/* ✅ Badge : pas de commission à l'achat */}
       <View style={styles.noCommBadge}>
         <Ionicons name="checkmark-circle-outline" size={12} color={GREEN} />
         <Text style={styles.noCommTxt}>
@@ -216,12 +208,10 @@ function RequestCard({ item, seconds, isGlow, onValidate }: {
         </Text>
       </View>
 
-      {/* Date */}
       <Text style={styles.cardDate}>
         {new Date(item.created_at).toLocaleString("fr-FR")}
       </Text>
 
-      {/* Bouton VALIDER */}
       <TouchableOpacity style={styles.validateBtn} onPress={onValidate} activeOpacity={0.85}>
         <Ionicons name="checkmark-circle" size={16} color="#000" />
         <Text style={styles.validateTxt}>VALIDER LA VENTE</Text>
@@ -321,10 +311,14 @@ function Screen() {
       if (!uid) return;
       const { data: ed } = await supabase.from("eds").select("id").eq("auth_uid", uid).eq("is_active", true).single();
       if (!ed) return;
+
+      // ✅ CORRECTION : filtre type='BUY' — ne charge QUE les demandes d'achat
       const { data } = await supabase
         .from("user_withdraw_requests")
         .select("id,user_uid,ed_id,amount_tan,status,created_at")
-        .eq("ed_id", ed.id).eq("status", "PENDING")
+        .eq("ed_id", ed.id)
+        .eq("status", "PENDING")
+        .eq("type", "BUY")
         .order("created_at", { ascending: true });
       setRequests(data ?? []);
     } finally {
@@ -370,7 +364,7 @@ function Screen() {
       sound.setOnPlaybackStatusUpdate(status => {
         if ((status as any).didJustFinish) sound.unloadAsync();
       });
-    } catch (e) {}
+    } catch {}
   };
 
   const doubleHaptic = async () => {
@@ -388,7 +382,7 @@ function Screen() {
     try {
       const { error } = await supabase.rpc("approve_agent_sell_tan", {
         p_request_id: selected.id,
-        p_agent_pin: pin,
+        p_agent_pin:  pin,
       });
       if (error) {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
@@ -399,13 +393,13 @@ function Screen() {
       setConfettiKey(k => k + 1);
       await playCash();
       await doubleHaptic();
-      // ✅ Toast avec montants réels
       showToast(
         "Vente validée ✅",
         `${selected.amount_tan.toLocaleString("fr-FR")} TAN crédités · ${(selected.amount_tan * TAN_TO_HTG).toLocaleString("fr-FR")} HTG reçus`,
         "success"
       );
       setRequests(prev => prev.filter(r => r.id !== selected.id));
+      // ✅ L'agent DONNE des TAN → son solde diminue
       setAgentBalance(prev => prev - selected.amount_tan);
       setPinModal(false);
       setSelected(null);
@@ -420,11 +414,10 @@ function Screen() {
 
   return (
     <View style={styles.screen}>
-
       <ConfettiBurst key={confettiKey} />
       <IOSToast toast={toast} anim={toastAnim} />
 
-      {/* ── Header ────────────────────────────── */}
+      {/* ── Header ── */}
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.75}>
           <Ionicons name="chevron-back" size={18} color={TEXT} />
@@ -438,7 +431,7 @@ function Screen() {
         </TouchableOpacity>
       </View>
 
-      {/* ── Solde Agent + taux officiels ─────── */}
+      {/* ── Solde Agent ── */}
       <View style={styles.balanceCard}>
         <View>
           <Text style={styles.balanceLbl}>Solde Agent</Text>
@@ -446,7 +439,6 @@ function Screen() {
           <Text style={styles.balanceSub}>TAN disponibles</Text>
         </View>
         <View style={{ alignItems: "flex-end", gap: 8 }}>
-          {/* ✅ Taux officiels HTG + USD */}
           <View style={styles.rateCard}>
             <View style={styles.rateRow}>
               <Ionicons name="flash" size={11} color={GOLD} />
@@ -468,7 +460,7 @@ function Screen() {
         </View>
       </View>
 
-      {/* ✅ Bannière info : pas de commission à l'achat */}
+      {/* ── Bannière info achat ── */}
       <View style={styles.infoBanner}>
         <Ionicons name="information-circle-outline" size={15} color={BLUE} />
         <Text style={styles.infoBannerTxt}>
@@ -477,7 +469,7 @@ function Screen() {
         </Text>
       </View>
 
-      {/* ── Liste demandes ───────────────────── */}
+      {/* ── Liste ── */}
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator color={GOLD} size="large" />
@@ -508,22 +500,17 @@ function Screen() {
         />
       )}
 
-      {/* ── Modal PIN ─────────────────────────── */}
+      {/* ── Modal PIN ── */}
       <Modal
-        transparent
-        visible={pinModal}
-        animationType="slide"
-        statusBarTranslucent
-        presentationStyle="overFullScreen"
+        transparent visible={pinModal} animationType="slide"
+        statusBarTranslucent presentationStyle="overFullScreen"
         onRequestClose={() => { setPinModal(false); setSelected(null); setPin(""); }}
       >
         <Pressable style={styles.pinBackdrop} onPress={() => { setPinModal(false); setSelected(null); setPin(""); }} />
-
         <View style={[styles.pinOuter, { bottom: kbHeight }]}>
           <View style={styles.pinSheet}>
             <View style={styles.pinHandle} />
 
-            {/* ✅ Résumé transaction dans modal */}
             {selected && (
               <View style={{ gap: 8 }}>
                 <View style={styles.pinAmountRow}>
@@ -538,7 +525,6 @@ function Screen() {
                     </Text>
                   </View>
                 </View>
-                {/* ✅ USD + badge no commission */}
                 <View style={styles.pinUsdRow}>
                   <Ionicons name="globe-outline" size={13} color={BLUE} />
                   <Text style={styles.pinUsdTxt}>
@@ -552,7 +538,6 @@ function Screen() {
               </View>
             )}
 
-            {/* Label PIN */}
             <View style={styles.pinLabelRow}>
               <View style={styles.pinLockIcon}>
                 <Ionicons name="lock-closed" size={16} color={GOLD} />
@@ -563,7 +548,6 @@ function Screen() {
               </View>
             </View>
 
-            {/* Input PIN */}
             <View style={styles.pinInputWrap}>
               <TextInput
                 ref={pinRef}
@@ -607,7 +591,7 @@ function Screen() {
         </View>
       </Modal>
 
-      {/* ── Alert système ─────────────────────── */}
+      {/* ── Alert système ── */}
       <Modal transparent visible={!!sysAlert} animationType="fade">
         <View style={styles.alertOverlay}>
           <View style={styles.alertCard}>
@@ -629,7 +613,6 @@ function Screen() {
           </View>
         </View>
       </Modal>
-
     </View>
   );
 }
@@ -650,7 +633,6 @@ const styles = StyleSheet.create({
   balanceVal:  { color: GOLD, fontSize: 26, fontWeight: "900", marginTop: 2 },
   balanceSub:  { color: MUTED, fontSize: 10, fontWeight: "600", marginTop: 1 },
 
-  // ✅ Carte taux
   rateCard:    { backgroundColor: BG, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: SOFT, gap: 6 },
   rateRow:     { flexDirection: "row", alignItems: "center", gap: 4 },
   rateTxt:     { color: TEXT, fontSize: 11, fontWeight: "700" },
@@ -659,7 +641,6 @@ const styles = StyleSheet.create({
   pendingDot:  { width: 7, height: 7, borderRadius: 4, backgroundColor: ORANGE },
   pendingTxt:  { color: ORANGE, fontSize: 11, fontWeight: "800" },
 
-  // ✅ Bannière info
   infoBanner:    { flexDirection: "row", alignItems: "flex-start", gap: 8, marginHorizontal: 16, marginBottom: 10, backgroundColor: `${BLUE}08`, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: `${BLUE}20` },
   infoBannerTxt: { flex: 1, color: TEXT, fontSize: 11, fontWeight: "600", lineHeight: 17 },
 
@@ -678,7 +659,6 @@ const styles = StyleSheet.create({
   timerBadge:  { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1 },
   timerTxt:    { fontWeight: "900", fontSize: 12 },
 
-  // ✅ Grille prix HTG + USD
   priceGrid:     { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingBottom: 10 },
   priceBoxGreen: { flex: 1, backgroundColor: `${GREEN}08`, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: `${GREEN}25` },
   priceBoxBlue:  { flex: 1, backgroundColor: `${BLUE}06`,  borderRadius: 12, padding: 10, borderWidth: 1, borderColor: `${BLUE}25` },
@@ -687,7 +667,6 @@ const styles = StyleSheet.create({
   priceValue:    { fontWeight: "900", fontSize: 15 },
   priceRate:     { color: MUTED, fontSize: 9, fontWeight: "600", marginTop: 3 },
 
-  // ✅ Badge no commission
   noCommBadge:   { flexDirection: "row", alignItems: "center", gap: 6, marginHorizontal: 16, marginBottom: 8, backgroundColor: `${GREEN}08`, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: `${GREEN}20` },
   noCommTxt:     { flex: 1, color: GREEN, fontSize: 11, fontWeight: "700" },
 
@@ -706,7 +685,6 @@ const styles = StyleSheet.create({
   pinAmountLbl: { color: MUTED, fontSize: 10, fontWeight: "700" },
   pinAmountVal: { color: TEXT, fontWeight: "900", fontSize: 16, marginTop: 3 },
 
-  // ✅ Ligne USD + badge dans modal
   pinUsdRow:     { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: `${BLUE}06`, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: `${BLUE}18` },
   pinUsdTxt:     { flex: 1, color: MUTED, fontSize: 12, fontWeight: "600" },
   noCommPill:    { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: `${GREEN}12`, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: `${GREEN}25` },

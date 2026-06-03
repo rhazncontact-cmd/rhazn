@@ -2,7 +2,8 @@
 // ✅ Modal d'avertissement doublon — bloque l'upload si détecté
 
 import { Ionicons } from "@expo/vector-icons";
-import { Animated, StyleSheet, Text, TouchableOpacity, View, useEffect, useRef } from "react-native";
+import { useEffect, useRef } from "react";
+import { Animated, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { DuplicateCheckResult } from "../hooks/useContentDuplicateCheck";
 
 const C = {
@@ -14,7 +15,7 @@ const C = {
 type Props = {
   visible:  boolean;
   result:   DuplicateCheckResult | null;
-  onForce?: () => void;   // Publier quand même (optionnel — Supreme seulement)
+  onForce?: () => void;
   onCancel: () => void;
   isSupreme?: boolean;
 };
@@ -42,15 +43,12 @@ export default function DuplicateWarningModal({ visible, result, onForce, onCanc
     <Animated.View style={[s.overlay, { opacity: anim, transform: [{ scale: anim.interpolate({ inputRange: [0,1], outputRange: [0.88,1] }) }] }]}>
       <View style={s.card}>
 
-        {/* Icône */}
         <View style={[s.iconRing, { backgroundColor: accent + "18", borderColor: accent + "40" }]}>
           <Ionicons name={icon as any} size={36} color={accent} />
         </View>
 
-        {/* Titre */}
         <Text style={s.title}>Contenu dupliqué détecté</Text>
 
-        {/* Raison */}
         <View style={[s.reasonBadge, { backgroundColor: accent + "14", borderColor: accent + "35" }]}>
           <Ionicons name="shield-checkmark" size={13} color={accent} />
           <Text style={[s.reasonTxt, { color: accent }]}>
@@ -63,7 +61,6 @@ export default function DuplicateWarningModal({ visible, result, onForce, onCanc
           )}
         </View>
 
-        {/* Contenu existant */}
         {result.existing_title && (
           <View style={s.existingBox}>
             <Text style={s.existingLabel}>Contenu existant :</Text>
@@ -73,7 +70,6 @@ export default function DuplicateWarningModal({ visible, result, onForce, onCanc
           </View>
         )}
 
-        {/* Message */}
         <Text style={s.message}>
           {isSimilar
             ? "Ce titre est très similaire à un contenu déjà publié sur RHAZN. Modifiez le titre ou vérifiez que ce contenu n'existe pas déjà."
@@ -81,19 +77,16 @@ export default function DuplicateWarningModal({ visible, result, onForce, onCanc
           }
         </Text>
 
-        {/* Règle RHAZN */}
         <View style={s.rulePill}>
           <Ionicons name="lock-closed" size={11} color="rgba(255,255,255,0.45)" />
           <Text style={s.ruleTxt}>Politique RHAZN — Protection des droits d'auteur</Text>
         </View>
 
-        {/* Actions */}
         <TouchableOpacity style={s.cancelBtn} onPress={onCancel} activeOpacity={0.85}>
           <Ionicons name="arrow-back" size={16} color="#000" />
           <Text style={s.cancelTxt}>Modifier le contenu</Text>
         </TouchableOpacity>
 
-        {/* Supreme override (optionnel) */}
         {isSupreme && isSimilar && onForce && (
           <TouchableOpacity style={s.forceBtn} onPress={onForce} activeOpacity={0.75}>
             <Ionicons name="flash" size={13} color={C.warn} />

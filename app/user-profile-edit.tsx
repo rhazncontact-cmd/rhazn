@@ -5,6 +5,7 @@
 // ✅ Barre de progression upload
 // ✅ Modal succès Apple-like
 // ✅ Vérification réseau avant upload
+// ✅ NOUVEAU : Departement dropdown + CIN field
 // ======================================================
 
 import { Ionicons } from "@expo/vector-icons";
@@ -54,6 +55,20 @@ const PROFESSION_PRESETS = [
   "Entrepreneur","Autre",
 ];
 const MARITAL_PRESETS = ["Célibataire", "Marié(e)", "Divorcé(e)", "Veuf(ve)"];
+const DEPARTEMENT_PRESETS = [
+  "Artibonite",
+  "Centre",
+  "Grand'Anse",
+  "Nippes",
+  "Nord",
+  "Nord-Est",
+  "Nord-Ouest",
+  "Ouest",
+  "Sud",
+  "Sud-Est",
+  "Utilisateur Diaspora",
+  "Utilisateur International",
+];
 
 const COUNTRY_CODES = [
   { code: "+509",   label: "Haïti 🇭🇹" },
@@ -228,10 +243,12 @@ export default function UserProfileEdit() {
   const [birthCity,       setBirthCity]       = useState("");
   const [birthCountry,    setBirthCountry]    = useState("");
   const [nif,             setNif]             = useState("");
+  const [cin,             setCin]             = useState("");
   const [profession,      setProfession]      = useState("");
   const [maritalStatus,   setMaritalStatus]   = useState("");
   const [premierSouvenir, setPremierSouvenir] = useState("");
   const [maritalModal,    setMaritalModal]    = useState(false);
+  const [departementModal,setDepartementModal] = useState(false);
   const [souvenirInfo,    setSouvenirInfo]    = useState(false);
   const [photoModal,      setPhotoModal]      = useState(false);
   const [email,           setEmail]           = useState("");
@@ -269,7 +286,7 @@ export default function UserProfileEdit() {
         .from("profiles")
         .select(`full_name,phone,whatsapp_country_code,whatsapp_phone,sex,
           birth_date,birth_department,birth_city,birth_country,
-          nif,profession,marital_status,premier_souvenir,
+          nif,cin,profession,marital_status,premier_souvenir,
           avatar_url,profile_completed_at`)
         .eq("id", auth.user.id)
         .single();
@@ -289,6 +306,7 @@ export default function UserProfileEdit() {
         setBirthCity(data.birth_city ?? "");
         setBirthCountry(data.birth_country ?? "");
         setNif(data.nif ?? "");
+        setCin(data.cin ?? "");
         setProfession(data.profession ?? "");
         setMaritalStatus(data.marital_status ?? "");
         setPremierSouvenir(data.premier_souvenir ?? "");
@@ -501,7 +519,7 @@ export default function UserProfileEdit() {
     if (!isFilled(birthDepartment)) return "Département requis";
     if (!isFilled(birthCity))       return "Ville naissance requise";
     if (!isFilled(birthCountry))    return "Pays naissance requis";
-    if (!isFilled(nif))             return "NIF requis";
+    if (!isFilled(nif) && !isFilled(cin)) return "NIF ou CIN requis";
     if (!isFilled(profession))      return "Profession requise";
     if (!isFilled(maritalStatus))   return "Statut matrimonial requis";
     if (!isFilled(premierSouvenir)) return "Souvenir inoubliable requis";
@@ -538,6 +556,7 @@ export default function UserProfileEdit() {
         whatsapp_country_code: countryCode,
         whatsapp_phone:        whatsappPhone.trim(),
         nif:                   nif.trim(),
+        cin:                   cin.trim(),
         marital_status:        maritalStatus.trim(),
         profile_stage:         "pending_cadna",
         cadna_status:          "pending",
@@ -571,6 +590,7 @@ export default function UserProfileEdit() {
         p_whatsapp_country_code: payload.whatsapp_country_code,
         p_whatsapp_phone:        payload.whatsapp_phone,
         p_nif:                   payload.nif,
+        p_cin:                   payload.cin,
         p_marital_status:        payload.marital_status,
         p_profile_stage:         payload.profile_stage,
         p_cadna_status:          payload.cadna_status,
@@ -657,7 +677,19 @@ export default function UserProfileEdit() {
           <Readonly label="Email" value={email} />
           <Input label="Pays de naissance"  value={birthCountry}    onChange={setBirthCountry}    readonly={isSealed} hint="Ex: Haïti" />
           <Input label="Ville de naissance" value={birthCity}       onChange={setBirthCity}       readonly={isSealed} hint="Ex: Port-Au-Prince" />
-          <Input label="Département"        value={birthDepartment} onChange={setBirthDepartment} readonly={isSealed} hint="Ex: Ouest / Centre / Sud..." />
+          
+          {/* ✅ NOUVEAU : Departement Dropdown */}
+          <Text style={styles.label}>Département</Text>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={() => !isSealed && setDepartementModal(true)}
+            style={styles.appleSelect}
+          >
+            <Text style={birthDepartment ? styles.appleValue : styles.applePlaceholder}>
+              {birthDepartment || "Choisir département"}
+            </Text>
+            <Ionicons name="chevron-forward" size={18} color="#999" />
+          </TouchableOpacity>
         </Section>
 
         {/* ── Informations personnelles ── */}
@@ -691,10 +723,19 @@ export default function UserProfileEdit() {
             keyboard="numeric"
             readonly={isSealed}
           />
+          
+          {/* ✅ NOUVEAU : NIF/CIN avec 2 champs */}
+          <Text style={styles.label}>NIF/CIN</Text>
           <Input label="NIF" value={nif}
             onChange={(t: string) => setNif(formatNIFInput(t))}
             keyboard="numeric"
+            hint="Optionnel si CIN rempli"
           />
+          <Input label="CIN" value={cin}
+            onChange={(t: string) => setCin(t.toUpperCase())}
+            hint="Optionnel si NIF rempli"
+          />
+
           <Input label="Profession" value={profession} onChange={setProfession}
             readonly={isSealed}
             hint={profession ? "" : `Ex: ${PROFESSION_PRESETS.slice(0,6).join(" • ")}`}
@@ -893,6 +934,25 @@ export default function UserProfileEdit() {
                 <TouchableOpacity key={m} onPress={() => { setMaritalStatus(m); setMaritalModal(false); }}
                   style={[styles.optionBtn, active && styles.optionActive]} activeOpacity={0.9}>
                   <Text style={active ? styles.optionActiveText : styles.optionText}>{m}</Text>
+                  {active && <Ionicons name="checkmark" size={18} color="#000" />}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* ✅ NOUVEAU : Modal Département */}
+      <Modal transparent visible={departementModal} animationType="fade">
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setDepartementModal(false)}>
+          <View style={styles.appleModal}>
+            <Text style={styles.modalTitle}>Département de naissance</Text>
+            {DEPARTEMENT_PRESETS.map((d) => {
+              const active = birthDepartment === d;
+              return (
+                <TouchableOpacity key={d} onPress={() => { setBirthDepartment(d); setDepartementModal(false); }}
+                  style={[styles.optionBtn, active && styles.optionActive]} activeOpacity={0.9}>
+                  <Text style={active ? styles.optionActiveText : styles.optionText}>{d}</Text>
                   {active && <Ionicons name="checkmark" size={18} color="#000" />}
                 </TouchableOpacity>
               );

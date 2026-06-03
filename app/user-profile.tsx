@@ -1,6 +1,9 @@
 // app/user-profile.tsx  (UI PROFIL IMPÉRIAL • RHAZN)
 // ✅ Badge rôle intelligent : CADNA-MEMBRE / Agent RHAZN / USER/CRÉATEUR
 // ✅ ACSET : 10 pour infos profil, 25 pour photo (SQL côté RPC)
+// ✅ CORRECTION : progress calculé AVANT monetStatus
+// ✅ CORRECTION : RPC enable_monetization_if_complete appelée au chargement
+// ✅ CORRECTION : monetStatus lit progress.ratio pour afficher le bon statut
 
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
@@ -82,23 +85,46 @@ const prettyCountdown = (seconds: number) => {
   return `${days}j ${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
 };
 
+// ✅ Calcul progress HORS composant pour pouvoir l'utiliser dans monetStatus
+const calcProgress = (profile: any) => {
+  if (!profile) return { ratio: 0, done: 0, total: 0, missing: [] as string[] };
+  const required: Array<{ key: string; label: string }> = [
+    { key: "full_name",        label: "Nom complet" },
+    { key: "email",            label: "Email" },
+    { key: "phone",            label: "Téléphone" },
+    { key: "whatsapp_phone",   label: "WhatsApp" },
+    { key: "nif",              label: "NIF" },
+    { key: "profession",       label: "Profession" },
+    { key: "marital_status",   label: "Statut matrimonial" },
+    { key: "birth_date",       label: "Date naissance" },
+    { key: "sex",              label: "Sexe" },
+    { key: "birth_city",       label: "Ville naissance" },
+    { key: "birth_country",    label: "Pays naissance" },
+    { key: "avatar_url",       label: "Photo profil" },
+    { key: "premier_souvenir", label: "Souvenir inoubliable" },
+  ];
+  const isFilled = (v: any) => !!safeText(v).trim();
+  const missing: string[] = [];
+  let done = 0;
+  for (const f of required) {
+    const ok = isFilled((profile as any)[f.key]);
+    if (ok) done++; else missing.push(f.label);
+  }
+  const total = required.length;
+  return { ratio: total === 0 ? 0 : done / total, done, total, missing };
+};
+
 const Row = ({ label, value, displayValue, copy }: any) => {
-  // ── RZ-ID :
-  //   value        = rz_id long → ce qui est copié dans le presse-papier
-  //   displayValue = user_code court → ce qui est affiché masqué
-  //   Sans displayValue → value est utilisé pour les deux
   const [copied, setCopied] = React.useState(false);
 
   const handleCopy = async () => {
     if (!copy || !value) return;
-    await Clipboard.setStringAsync(String(value));    // ← user_code complet
+    await Clipboard.setStringAsync(String(value));
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Masquage : 8 premiers chars + •••••• + 4 derniers
-  // Ex: RZHA1990••••••UY59  — copie code complet
   const baseDisplay = displayValue || value;
   const maskedValue = (() => {
     if (!copy || !baseDisplay) return baseDisplay || "—";
@@ -109,9 +135,7 @@ const Row = ({ label, value, displayValue, copy }: any) => {
 
   return (
     <TouchableOpacity activeOpacity={copy ? 0.82 : 1} onPress={handleCopy} style={styles.row}>
-      {/* Label — flex:0 pour ne pas empiéter sur la valeur */}
       <Text style={[styles.rowLabel, { flex: 1 }]}>{label}</Text>
-      {/* Valeur — flex:1 pour occuper le reste */}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 1 }}>
         <Text style={[styles.rowValue, copy && styles.rzidValue]} numberOfLines={3} adjustsFontSizeToFit>
           {maskedValue}
@@ -167,7 +191,7 @@ function StatusBadge({ label, type }: any) {
   );
 }
 
-/* ================= PROGRESS ================= */
+/* ================= PROGRESS BAR ================= */
 function ProgressBar({ value }: { value: number }) {
   const pct = Math.max(0, Math.min(1, value));
   return (
@@ -184,26 +208,30 @@ function ProgressBar({ value }: { value: number }) {
 export default function UserProfile() {
   const router = useRouter();
 
-
   const [pinVisible, setPinVisible] = useState(true);
   const [pinReady,   setPinReady]   = useState(false);
 
-  const [profile,      setProfile]      = useState<any>(null);
-  const [wallet,       setWallet]       = useState<any>(null);
-  const [loading,      setLoading]      = useState(true);
-  const [photoVisible, setPhotoVisible] = useState(false);
- const [avatarVersion, setAvatarVersion] = useState(Date.now());
-
- const [secondsLeft, setSecondsLeft] = useState(0);
-
-  // ✅ Nombre de publications pour badge USER/CRÉATEUR
-  const [pubCount, setPubCount] = useState(0);
+  const [profile,       setProfile]       = useState<any>(null);
+  const [wallet,        setWallet]        = useState<any>(null);
+  const [loading,       setLoading]       = useState(true);
+  const [photoVisible,  setPhotoVisible]  = useState(false);
+  const [avatarVersion, setAvatarVersion] = useState(Date.now());
+  const [secondsLeft,   setSecondsLeft]   = useState(0);
+  const [pubCount,      setPubCount]      = useState(0);
 
   /* ── Load profile + wallet + publications ── */
   const loadProfile = async () => {
     const { data: auth } = await supabase.auth.getUser();
     const uid = auth?.user?.id;
     if (!uid) { setProfile(null); setLoading(false); return; }
+
+    // ✅ CORRECTION : Appeler la RPC AVANT de charger le profil
+    // Elle met à jour monetization_enabled en BDD si profil 100% complété
+    try {
+      await supabase.rpc("enable_monetization_if_complete");
+    } catch (e) {
+      console.log("enable_monetization_if_complete ignorée:", e);
+    }
 
     const { data: p } = await supabase
       .from("profiles")
@@ -216,23 +244,20 @@ export default function UserProfile() {
       .select("tan_balance, acset_balance, status, updated_at")
       .eq("user_id", uid).single();
 
-    // ✅ Compter les publications pour le badge créateur
     const { count } = await supabase
       .from("store_products")
       .select("id", { count: "exact", head: true })
       .eq("user_id", uid);
 
-    console.log("USER_CODE 👉", p?.user_code);
     setProfile(p);
     setWallet(w || null);
-    setAvatarVersion(Date.now()); // ✅ force refresh de l'image
+    setAvatarVersion(Date.now());
     setPubCount(count ?? 0);
     setLoading(false);
     setSecondsLeft(calcSecondsLeft(p?.created_at, p?.profile_completed_at));
   };
 
   useEffect(() => { loadProfile(); }, []);
-
   useFocusEffect(useCallback(() => { loadProfile(); }, []));
 
   useEffect(() => {
@@ -245,90 +270,57 @@ export default function UserProfile() {
 
   const initials = profile?.full_name?.[0]?.toUpperCase() || "R";
 
+  // ✅ CORRECTION 1 : progress calculé EN PREMIER
+  // Nécessaire pour que monetStatus puisse lire progress.ratio
+  const progress = useMemo(() => calcProgress(profile), [profile]);
+
+  // ✅ CORRECTION 2 : monetStatus lit progress.ratio
+  // Si profil 100% OU monetization_enabled = true en BDD → monétisé
   const monetStatus = useMemo(() => {
-  if (!profile) return { label: "—", type: "pending" };
+    if (!profile) return { label: "—", type: "pending" };
 
-  if (profile.account_status === "PAUSED") {
-    return { label: "Compte en pause", type: "bad" };
-  }
+    // Compte en pause → priorité absolue
+    if (profile.account_status === "PAUSED") {
+      return { label: "Compte en pause", type: "bad" };
+    }
 
-  const role = String(profile.role || "").toLowerCase();
+    const role = String(profile.role || "").toLowerCase();
 
-  if (["agent", "admin", "cadna", "supreme"].includes(role)) {
-    return { label: "Monétisation activée", type: "ok" };
-  }
+    // Rôles spéciaux → toujours monétisé
+    if (["agent", "admin", "cadna", "supreme"].includes(role)) {
+      return { label: "Monétisation activée", type: "ok" };
+    }
 
-  return profile.monetization_enabled
-    ? { label: "Monétisation activée", type: "ok" }
-    : { label: "Monétisation désactivée", type: "pending" };
-}, [profile]);
+    // ✅ Profil 100% complété → monétisé (même si BDD pas encore à jour)
+    if (progress.ratio === 1) {
+      return { label: "Monétisation activée", type: "ok" };
+    }
 
-  // ═══════════════════════════════════════════════════════════
-  // ✅ BADGE RÔLE INTELLIGENT
-  // Priorité :
-  //   1. SUPREME → badge or
-  //   2. role = "agent" → "Agent RHAZN"
-  //   3. ≥ 1 publication → "USER/CRÉATEUR"
-  //   4. cadna_status = "approved" → "CADNA-MEMBRE"
-  //   5. Sinon → "MEMBRE"
-  // ═══════════════════════════════════════════════════════════
+    // BDD à jour → monétisé
+    if (profile.monetization_enabled) {
+      return { label: "Monétisation activée", type: "ok" };
+    }
+
+    // Sinon → affiche le % manquant
+    return {
+      label: `Non monétisé · ${Math.round(progress.ratio * 100)}% complété`,
+      type: "pending",
+    };
+  }, [profile, progress]);
+
+  /* ── Badge rôle ── */
   const roleBadge = useMemo(() => {
     if (!profile) return { label: "MEMBRE", tone: "pending" as const };
-
     const role = safeText(profile.role).toLowerCase();
-
-    // ✅ Ordre de priorité : rôle explicite > créateur > membre
-    if (role === "supreme") {
-      return { label: "SUPREME",     tone: "gold"    as const };
-    }
-    if (role === "admin") {
-      return { label: "ADMIN",       tone: "gold"    as const };
-    }
-    if (role === "cadna") {
-      return { label: "CADNA",       tone: "ok"      as const };
-    }
-    if (role === "cada") {
-      return { label: "CADA",        tone: "ok"      as const };
-    }
-    if (role === "agent") {
-      return { label: "AGENT RHAZN", tone: "blue"    as const };
-    }
-    if (pubCount >= 1) {
-      return { label: "CRÉATEUR",    tone: "ok"      as const };
-    }
-    if (profile.cadna_status === "approved") {
-      return { label: "CERTIFIÉ CADNA", tone: "ok"  as const };
-    }
-    return { label: "MEMBRE",        tone: "pending" as const };
+    if (role === "supreme")  return { label: "SUPREME",       tone: "gold" as const };
+    if (role === "admin")    return { label: "ADMIN",         tone: "gold" as const };
+    if (role === "cadna")    return { label: "CADNA",         tone: "ok"   as const };
+    if (role === "cada")     return { label: "CADA",          tone: "ok"   as const };
+    if (role === "agent")    return { label: "AGENT RHAZN",   tone: "blue" as const };
+    if (pubCount >= 1)       return { label: "CRÉATEUR",      tone: "ok"   as const };
+    if (profile.cadna_status === "approved") return { label: "CERTIFIÉ CADNA", tone: "ok" as const };
+    return { label: "MEMBRE", tone: "pending" as const };
   }, [profile, pubCount]);
-
-  const progress = useMemo(() => {
-    if (!profile) return { ratio: 0, done: 0, total: 0, missing: [] as string[] };
-    const required: Array<{ key: string; label: string }> = [
-      { key: "full_name",      label: "Nom complet" },
-      { key: "email",          label: "Email" },
-      { key: "phone",          label: "Téléphone" },
-      { key: "whatsapp_phone", label: "WhatsApp" },
-      { key: "nif",            label: "NIF" },
-      { key: "profession",     label: "Profession" },
-      { key: "marital_status", label: "Statut matrimonial" },
-      { key: "birth_date",     label: "Date naissance" },
-      { key: "sex",            label: "Sexe" },
-      { key: "birth_city",     label: "Ville naissance" },
-      { key: "birth_country",  label: "Pays naissance" },
-      { key: "avatar_url",     label: "Photo profil" },
-      { key: "premier_souvenir", label: "Souvenir inoubliable" },
-    ];
-    const isFilled = (v: any) => !!safeText(v).trim();
-    const missing: string[] = [];
-    let done = 0;
-    for (const f of required) {
-      const ok = isFilled((profile as any)[f.key]);
-      if (ok) done++; else missing.push(f.label);
-    }
-    const total = required.length;
-    return { ratio: total === 0 ? 0 : done / total, done, total, missing };
-  }, [profile]);
 
   const deadlineText = useMemo(() => {
     if (!profile?.created_at) return "—";
@@ -382,7 +374,6 @@ export default function UserProfile() {
           <Text style={styles.name}>{profile.full_name || "Utilisateur"}</Text>
           <Text style={styles.email}>{profile.email}</Text>
 
-          {/* ✅ Badge rôle intelligent — un seul badge propre */}
           <View style={styles.pillsRow}>
             <Pill text={roleBadge.label} tone={roleBadge.tone} />
           </View>
@@ -411,7 +402,6 @@ export default function UserProfile() {
               </View>
             )}
 
-            {/* ✅ Rappel coûts ACSET */}
             <View style={styles.acsetCostCard}>
               <Text style={styles.acsetCostTitle}>Coûts de modification</Text>
               <View style={styles.acsetCostRow}>
@@ -420,7 +410,7 @@ export default function UserProfile() {
               </View>
               <View style={styles.acsetCostRow}>
                 <Text style={styles.acsetCostLabel}>Photo de profil</Text>
-                <Text style={styles.acsetCostValue}>25 ACSET</Text>
+                <Text style={styles.acsetCostValue}>15 ACSET</Text>
               </View>
             </View>
           </View>
@@ -428,15 +418,7 @@ export default function UserProfile() {
 
         {/* ── Identité RHAZN ── */}
         <Section title="Identité RHAZN">
-          {/* ✅ RZ-ID :
-               - Affiché  : 6 premiers chars masqués  ex: RZHA19••••••
-               - Copié    : user_code complet immuable ex: RZHA19900513MDELABNUOY...
-               - rz_id est un hash interne — jamais affiché */}
-          <Row
-            label="RZ-ID (public)"
-            value={profile.user_code}
-            copy
-          />
+          <Row label="RZ-ID (public)" value={profile.user_code} copy />
           <Row label="Rôle"      value={roleBadge.label} />
           <Row label="Email"     value={profile.email} />
           <Row label="Téléphone" value={profile.phone} />
@@ -445,15 +427,14 @@ export default function UserProfile() {
 
         {/* ── Informations personnelles ── */}
         <Section title="Informations personnelles">
-          <Row label="Date naissance"    value={formatDateFR(profile.birth_date)} />
-          <Row label="Sexe"              value={profile.sex} />
-          <Row label="Ville naissance"   value={profile.birth_city} />
-          <Row label="Pays naissance"    value={profile.birth_country} />
-          <Row label="NIF"               value={profile.nif} />
-          <Row label="Profession"        value={profile.profession} />
-          <Row label="Statut matrimonial" value={profile.marital_status} />
+          <Row label="Date naissance"      value={formatDateFR(profile.birth_date)} />
+          <Row label="Sexe"                value={profile.sex} />
+          <Row label="Ville naissance"     value={profile.birth_city} />
+          <Row label="Pays naissance"      value={profile.birth_country} />
+          <Row label="NIF"                 value={profile.nif} />
+          <Row label="Profession"          value={profile.profession} />
+          <Row label="Statut matrimonial"  value={profile.marital_status} />
           <Row label="Souvenir inoubliable" value={profile.premier_souvenir} />
-
         </Section>
 
         {/* ── Compte & BANQ ── */}
@@ -528,14 +509,14 @@ const styles = StyleSheet.create({
   copyBtn:   { width: 28, height: 28, borderRadius: 9, backgroundColor: "rgba(212,175,55,0.12)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(212,175,55,0.30)" },
   copyBtnDone:{ backgroundColor: "rgba(22,163,74,0.12)", borderColor: "rgba(22,163,74,0.35)" },
 
-  primaryBtn:  { backgroundColor: COLORS.gold, padding: 15, borderRadius: 18, alignItems: "center", marginTop: 14 },
-  primaryText: { color: "#000", fontWeight: "900" },
-  secondaryBtn:  { backgroundColor: COLORS.card, padding: 15, borderRadius: 18, alignItems: "center", marginTop: 10 },
-  secondaryText: { fontWeight: "800", color: COLORS.text },
+  primaryBtn:   { backgroundColor: COLORS.gold, padding: 15, borderRadius: 18, alignItems: "center", marginTop: 14 },
+  primaryText:  { color: "#000", fontWeight: "900" },
+  secondaryBtn: { backgroundColor: COLORS.card, padding: 15, borderRadius: 18, alignItems: "center", marginTop: 10 },
+  secondaryText:{ fontWeight: "800", color: COLORS.text },
 
-  qrWrap: { alignItems: "center", marginTop: 28, marginBottom: 20 },
+  qrWrap:        { alignItems: "center", marginTop: 28, marginBottom: 20 },
   qrPlaceholder: { width: 130, height: 130, backgroundColor: "#F5F5F7", borderRadius: 12, borderWidth: 1, borderColor: "#E5E5EA", alignItems: "center", justifyContent: "center" },
-  qrHint: { marginTop: 10, fontSize: 12, color: COLORS.sub, textAlign: "center" },
+  qrHint:        { marginTop: 10, fontSize: 12, color: COLORS.sub, textAlign: "center" },
 
   progressHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   progressTitle:  { fontWeight: "900", color: COLORS.text },
@@ -549,17 +530,11 @@ const styles = StyleSheet.create({
   missingTitle: { fontWeight: "900", color: COLORS.text, marginBottom: 4, fontSize: 12 },
   missingText:  { color: COLORS.sub, fontWeight: "700", fontSize: 12, lineHeight: 16 },
 
-  // ✅ Carte coûts ACSET
-  acsetCostCard: {
-    backgroundColor: "rgba(212,175,55,0.06)",
-    borderRadius: 14, padding: 12,
-    borderWidth: 1, borderColor: "rgba(212,175,55,0.22)",
-    gap: 6,
-  },
-  acsetCostTitle: { color: COLORS.gold, fontWeight: "900", fontSize: 12, marginBottom: 2 },
-  acsetCostRow:   { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  acsetCostLabel: { color: COLORS.sub, fontSize: 12, fontWeight: "600" },
-  acsetCostValue: { color: COLORS.gold, fontSize: 12, fontWeight: "900" },
+  acsetCostCard: { backgroundColor: "rgba(212,175,55,0.06)", borderRadius: 14, padding: 12, borderWidth: 1, borderColor: "rgba(212,175,55,0.22)", gap: 6 },
+  acsetCostTitle:{ color: COLORS.gold, fontWeight: "900", fontSize: 12, marginBottom: 2 },
+  acsetCostRow:  { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  acsetCostLabel:{ color: COLORS.sub, fontSize: 12, fontWeight: "600" },
+  acsetCostValue:{ color: COLORS.gold, fontSize: 12, fontWeight: "900" },
 
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "center", alignItems: "center" },
   photoCard:     { backgroundColor: "#FFF", padding: 26, borderRadius: 26, alignItems: "center", width: 300 },

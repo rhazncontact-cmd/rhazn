@@ -3,6 +3,11 @@
 // ✅ Nouvelle logique : 1 TAN = 10 HTG · Commission 20% sur retrait (15% RHAZN + 5% Agent)
 // ✅ Expiration 100s + tri urgent + glow + confetti
 // ✅ Toast iOS + Alert système + PIN modal
+// ✅ CORRECTIONS :
+//    - PIN transmis à approve_agent_withdraw_tan
+//    - setAgentBalance : DÉBIT correct (l'agent ne donne pas de TAN, le solde reste stable)
+//    - Double showToast supprimé
+//    - credit_supreme_wallet retiré (géré côté RPC Supabase)
 
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
@@ -43,13 +48,12 @@ const ORANGE   = "#FF9500";
 const BLUE     = "#007AFF";
 
 const REQUEST_EXPIRY_SECONDS = 100;
-// ✅ Nouvelle logique tarifaire officielle RHAZN
-const TAN_TO_HTG = 10;    // 1 TAN = 10 HTG
-const TAN_TO_USD = 0.05;  // 1 TAN = 0.05 USD
+// ✅ Logique tarifaire officielle RHAZN
+const TAN_TO_HTG      = 10;    // 1 TAN = 10 HTG
+const TAN_TO_USD      = 0.05;  // 1 TAN = 0.05 USD
 // ✅ Commission retrait : 20% total (15% RHAZN + 5% Agent)
-const COMMISSION_RATE   = 0.20;
-const RHAZN_RATE        = 0.15;
-const AGENT_RATE        = 0.05;
+const RHAZN_RATE      = 0.15;
+const AGENT_RATE      = 0.05;
 
 // ─── Types ──────────────────────────────────────────────────
 type WithdrawRow = {
@@ -158,9 +162,9 @@ function RequestCard({ item, seconds, isGlow, onValidate, onReject }: {
   const agentFee    = Math.round(item.amount_tan * AGENT_RATE);   // 5%
   const rhaznFee    = Math.round(item.amount_tan * RHAZN_RATE);   // 15%
   const totalFee    = agentFee + rhaznFee;                        // 20%
-  const netTan      = item.amount_tan - totalFee;                 // TAN nets reçus
-  const htgDecaisse = item.amount_tan * TAN_TO_HTG;               // HTG que l'agent décaisse
-  const agentEarns  = agentFee * TAN_TO_HTG;                      // HTG que l'agent gagne
+  const netTan      = item.amount_tan - totalFee;                 // TAN nets reçus par le client
+  const htgDecaisse = item.amount_tan * TAN_TO_HTG;               // HTG que l'agent décaisse en cash
+  const agentEarns  = agentFee * TAN_TO_HTG;                      // HTG équivalent de la commission agent
   const usdNet      = (netTan * TAN_TO_USD).toFixed(2);
 
   const glow = useRef(new Animated.Value(0)).current;
@@ -318,10 +322,10 @@ function Screen() {
 
   const showSysAlert = (rawMsg?: string) => {
     if (!rawMsg) { setSysAlert({ title: "Erreur système", msg: "Une erreur inconnue est survenue." }); return; }
-    if (rawMsg.includes("non monétisé"))    { setSysAlert({ title: "Compte non monétisé",  msg: "Le profil doit être complété pour activer les transactions.", action: "Compléter", route: "/user-profile-edit" }); return; }
-    if (rawMsg.includes("insufficient"))    { setSysAlert({ title: "Solde insuffisant",     msg: "Le solde TAN de l'utilisateur est insuffisant." }); return; }
+    if (rawMsg.includes("non monétisé"))     { setSysAlert({ title: "Compte non monétisé",  msg: "Le profil doit être complété pour activer les transactions.", action: "Compléter", route: "/user-profile-edit" }); return; }
+    if (rawMsg.includes("insufficient"))     { setSysAlert({ title: "Solde insuffisant",     msg: "Le solde TAN de l'utilisateur est insuffisant." }); return; }
     if (rawMsg.includes("already processed")){ setSysAlert({ title: "Déjà traité",           msg: "Cette demande a déjà été traitée." }); return; }
-    if (rawMsg.includes("PIN"))             { setSysAlert({ title: "PIN incorrect",          msg: "Le PIN agent saisi est incorrect." }); return; }
+    if (rawMsg.includes("PIN"))              { setSysAlert({ title: "PIN incorrect",          msg: "Le PIN agent saisi est incorrect." }); return; }
     setSysAlert({ title: "Erreur RHAZN", msg: rawMsg });
   };
 
@@ -354,10 +358,13 @@ function Screen() {
       if (!uid) return;
       const { data: ed } = await supabase.from("eds").select("id").eq("auth_uid", uid).eq("is_active", true).single();
       if (!ed) return;
+      // ✅ CORRECTION : filtre type='WITHDRAW' — ne charge QUE les demandes de retrait
       const { data } = await supabase
         .from("user_withdraw_requests")
         .select("id,user_uid,ed_id,amount_tan,status,created_at")
-        .eq("ed_id", ed.id).eq("status", "PENDING")
+        .eq("ed_id", ed.id)
+        .eq("status", "PENDING")
+        .eq("type", "WITHDRAW")
         .order("created_at", { ascending: true });
       setRequests(data ?? []);
     } finally {
@@ -409,30 +416,53 @@ function Screen() {
 
   const approve = async () => {
     if (!selected) return;
-    if (!pin || pin.length < 3) { showToast("PIN requis", "Entrez votre PIN pour valider.", "error"); return; }
+    // ✅ Validation PIN requise
+    if (!pin || pin.length < 3) {
+      showToast("PIN requis", "Entrez votre PIN pour valider.", "error");
+      return;
+    }
     setBusy(true);
     try {
+      // ✅ CORRECTION BUG 3 : PIN transmis à la RPC (était absent dans la version originale)
       const { error } = await supabase.rpc("approve_agent_withdraw_tan", {
         p_request_id: selected.id,
+        p_agent_pin:  pin,
       });
-      if (error) { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {}); showSysAlert(error.message); return; }
 
-      // ✅ Notification in-app uniquement — pas d'email (quota Resend)
-      // La notification est envoyée automatiquement par approve_agent_withdraw_tan (RPC)
+      if (error) {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+        showSysAlert(error.message);
+        return;
+      }
 
-      const agentFee = Math.round(selected.amount_tan * AGENT_RATE);
+      // ✅ LOGIQUE SOLDE RETRAIT CORRIGÉE :
+      // Client demande X TAN → reçoit X×10 HTG en cash physique de l'agent.
+      // RPC débite le client : X + 20% (X + rhaznFee + agentFee).
+      // RPC crédite l'agent  : X TAN (remboursement) + agentFee TAN (5% commission).
+      // Résultat net agent   : +X+agentFee TAN sur wallet, -X×10 HTG sortis en cash.
+
+      const agentFee         = Math.round(selected.amount_tan * AGENT_RATE); // 5%
+      const totalAgentCredit = selected.amount_tan + agentFee;               // X + 5%
+      const htgDecaisse      = selected.amount_tan * TAN_TO_HTG;             // HTG sortis
+
       setGlowId(selected.id);
       setConfettiKey(k => k + 1);
       await playCash();
       await doubleHaptic();
+
       showToast(
         "Retrait validé ✅",
-        `${selected.amount_tan.toLocaleString("fr-FR")} TAN · Vous gagnez ${agentFee} TAN (5%)`,
+        `+${totalAgentCredit.toLocaleString("fr-FR")} TAN crédités · ${htgDecaisse.toLocaleString("fr-FR")} HTG décaissés`,
         "success"
       );
+
       setRequests(prev => prev.filter(r => r.id !== selected.id));
-      setAgentBalance(prev => prev + agentFee); // ✅ Agent reçoit 5%
-      setPinModal(false); setSelected(null); setPin("");
+      // ✅ Mise à jour optimiste : agent récupère X + 5% TAN sur son wallet
+      setAgentBalance(prev => prev + totalAgentCredit);
+
+      setPinModal(false);
+      setSelected(null);
+      setPin("");
       setTimeout(() => { loadRequests(); setGlowId(null); }, 1200);
     } finally {
       setBusy(false);
@@ -696,7 +726,6 @@ const styles = StyleSheet.create({
   pendingDot:  { width: 7, height: 7, borderRadius: 4, backgroundColor: ORANGE },
   pendingTxt:  { color: ORANGE, fontSize: 11, fontWeight: "800" },
 
-  // ✅ Bannière commission
   commBanner:    { flexDirection: "row", alignItems: "flex-start", gap: 8, marginHorizontal: 16, marginBottom: 10, backgroundColor: `${ORANGE}08`, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: `${ORANGE}20` },
   commBannerTxt: { flex: 1, color: TEXT, fontSize: 11, fontWeight: "600", lineHeight: 17 },
 
@@ -715,7 +744,6 @@ const styles = StyleSheet.create({
   timerBadge: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1 },
   timerTxt:   { fontWeight: "900", fontSize: 12 },
 
-  // ✅ Grille prix
   priceGrid:      { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
   priceBoxOrange: { flex: 1, backgroundColor: `${ORANGE}08`, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: `${ORANGE}25` },
   priceBoxGreen:  { flex: 1, backgroundColor: `${GREEN}08`,  borderRadius: 12, padding: 10, borderWidth: 1, borderColor: `${GREEN}25` },
@@ -724,7 +752,6 @@ const styles = StyleSheet.create({
   priceValue:     { fontWeight: "900", fontSize: 15 },
   priceRate:      { color: MUTED, fontSize: 9, fontWeight: "600", marginTop: 3 },
 
-  // ✅ Commission badges dans carte
   commRow:   { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
   commBadge: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: GOLD_DIM, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5, borderWidth: 1, borderColor: GOLD_BD },
   commTxt:   { color: GOLD, fontSize: 10, fontWeight: "800" },
@@ -739,7 +766,6 @@ const styles = StyleSheet.create({
   rejectBtn:   { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, backgroundColor: `${RED}10`, borderRadius: 14, paddingVertical: 13, borderWidth: 1, borderColor: `${RED}25` },
   rejectTxt:   { color: RED, fontWeight: "900", fontSize: 13 },
 
-  // PIN
   pinBackdrop:  { flex: 1, backgroundColor: "rgba(0,0,0,0.45)" },
   pinOuter:     { position: "absolute", left: 0, right: 0, bottom: 0 },
   pinSheet:     { backgroundColor: CARD, borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 20, paddingBottom: Platform.OS === "ios" ? 36 : 24, borderTopWidth: 1, borderColor: SOFT, gap: 12 },
@@ -751,7 +777,6 @@ const styles = StyleSheet.create({
   pinAmountLbl: { color: MUTED, fontSize: 10, fontWeight: "700" },
   pinAmountVal: { color: TEXT, fontWeight: "900", fontSize: 16, marginTop: 3 },
 
-  // ✅ Grid commission dans modal
   pinCommGrid: { flexDirection: "row", gap: 8 },
   pinCommBox:  { flex: 1, flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: GOLD_DIM, borderRadius: 12, padding: 10, borderWidth: 1, borderColor: GOLD_BD },
   pinCommLbl:  { color: MUTED, fontSize: 9, fontWeight: "700" },

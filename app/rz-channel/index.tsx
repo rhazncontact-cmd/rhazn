@@ -5,7 +5,6 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Dimensions,
-  FlatList,
   Image,
   Modal,
   Pressable,
@@ -34,6 +33,7 @@ const ACTUS_CARD_H   = 110;
 // ✅ Carte produit Apple-like : compacte et élégante
 const PRODUCT_CARD_W = 124;
 const SUPREME_EMAIL  = "meyounbauniklovegodstory@gmail.com";
+const SUPREME_UID    = "596fd84b-0c18-4d65-9c5a-afd55beffb36"; // ✅ nouveau
 const MAX_DELETE_SEL = 50;
 
 const COLORS = {
@@ -62,6 +62,12 @@ type ActualiteItem = {
   media_type?: string | null;
   is_featured: boolean;
   created_at?: string;
+};
+
+type SupremeProduct = {
+  id:        string;
+  cover_url: string;
+  title:     string | null;
 };
 
 type ProductItem = {
@@ -107,68 +113,55 @@ function ActualitesSection({
   dbItems: ActualiteItem[]; isSupreme: boolean;
   onEditPress: () => void; onCardPress: () => void;
 }) {
-  const flatRef         = useRef<FlatList>(null);
-  const currentIndexRef = useRef(0);
+  const [supremeProducts, setSupremeProducts] = useState<SupremeProduct[]>([]);
+  const [activeTab,       setActiveTab]       = useState<"images"|"texte">("images");
+  const [currentPage,     setCurrentPage]     = useState(0);
+  const timerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const combinedData: Array<{
-    id: string; isBig?: boolean; title?: string;
-    content?: string; image?: string; summary?: string;
-  }> = (() => {
-    if (dbItems.length === 0) return [];
-    const bigItem   = dbItems.find((i) => i.is_featured) ?? dbItems[0];
-    const smallList = dbItems.filter((i) => i.id !== bigItem.id);
-    return [
-      { id: bigItem.id, isBig: true, title: bigItem.title, content: bigItem.content, image: bigItem.image_url ?? undefined },
-      ...smallList.map((i) => ({ id: i.id, isBig: false, image: i.image_url ?? undefined, summary: i.content, title: i.title })),
-    ];
-  })();
-
+  // Charger les produits SUPREME (images de la page auteur RHAZN)
   useEffect(() => {
-    if (combinedData.length === 0) return;
-    const interval = setInterval(() => {
-      const next = (currentIndexRef.current + 1) % combinedData.length;
-      currentIndexRef.current = next;
-      flatRef.current?.scrollToIndex({ index: next, animated: true, viewPosition: 0 });
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [combinedData.length]);
+    (async () => {
+      const { data } = await supabase
+        .from("products")
+        .select("id, cover_url, title")
+        .eq("user_id", SUPREME_UID)
+        .eq("cadna_status", "approved")
+        .is("deleted_at", null)
+        .not("cover_url", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (data) setSupremeProducts(data as SupremeProduct[]);
+    })();
+  }, []);
 
-  const getItemLayout = (_: any, index: number) => {
-    const w = index === 0 ? BIG_CARD_W + 12 : SMALL_CARD_W + 12;
-    let offset = 0;
-    for (let i = 0; i < index; i++) offset += i === 0 ? BIG_CARD_W + 12 : SMALL_CARD_W + 12;
-    return { length: w, offset, index };
-  };
+  // Grille 3×3 = 9 images par page
+  const GRID_SIZE   = 6;
+  const totalPages  = Math.max(1, Math.ceil(supremeProducts.length / GRID_SIZE));
+  const currentGrid = supremeProducts.slice(currentPage * GRID_SIZE, (currentPage + 1) * GRID_SIZE);
 
-  if (combinedData.length === 0) {
-    return (
-      <View>
-        <View style={sStyles.sectionTitleRow}>
-          <Text style={sStyles.sectionTitle}>RHAZN-ACTUS</Text>
-          {isSupreme && (
-            <Pressable style={sStyles.editActuBtn} onPress={onEditPress}>
-              <Ionicons name="pencil" size={14} color="#000" />
-              <Text style={sStyles.editActuTxt}>Gérer</Text>
-            </Pressable>
-          )}
-        </View>
-        <View style={{ paddingHorizontal: 16, paddingBottom: 12 }}>
-          <View style={{ backgroundColor: "rgba(212,175,55,0.06)", borderRadius: 16, borderWidth: 1, borderColor: "rgba(212,175,55,0.15)", paddingHorizontal: 20, paddingVertical: 16, flexDirection: "row", alignItems: "center", gap: 12 }}>
-            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: "rgba(212,175,55,0.12)", alignItems: "center", justifyContent: "center" }}>
-              <Text style={{ fontSize: 18 }}>📢</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: COLORS.text, fontWeight: "900", fontSize: 14, marginBottom: 3 }}>Aucune actualité</Text>
-              <Text style={{ color: COLORS.muted, fontSize: 12, fontWeight: "600" }}>Les annonces officielles RHAZN apparaîtront ici.</Text>
-            </View>
-          </View>
-        </View>
-      </View>
-    );
-  }
+  // Auto-rotation des pages avec animation
+  // ✅ Défilement horizontal automatique gauche ↔ droite
+const scrollRef = useRef<ScrollView>(null);
+const dirRef    = useRef<1 | -1>(1);
+
+useEffect(() => {
+  if (supremeProducts.length <= GRID_SIZE) return;
+  timerRef.current = setInterval(() => {
+    const next = currentPage + dirRef.current;
+    if (next >= totalPages - 1) dirRef.current = -1;
+    if (next <= 0)              dirRef.current = 1;
+    const target = Math.max(0, Math.min(totalPages - 1, currentPage + dirRef.current));
+    scrollRef.current?.scrollTo({ x: target * BIG_CARD_W, animated: true });
+    setCurrentPage(target);
+  }, 3000);
+  return () => { if (timerRef.current) clearInterval(timerRef.current); };
+}, [supremeProducts.length, totalPages, currentPage]);
+
+  const CELL_SIZE = (BIG_CARD_W - 4) / 3;
 
   return (
     <View style={{ marginBottom: 8 }}>
+      {/* Header */}
       <View style={sStyles.sectionTitleRow}>
         <Text style={sStyles.sectionTitle}>RHAZN-ACTUS</Text>
         {isSupreme && (
@@ -178,59 +171,157 @@ function ActualitesSection({
           </Pressable>
         )}
       </View>
-      <FlatList
-        ref={flatRef}
-        horizontal
-        data={combinedData}
-        keyExtractor={(i) => i.id}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}
-        snapToAlignment="start"
-        decelerationRate="fast"
-        getItemLayout={getItemLayout}
-        onScrollToIndexFailed={() => {}}
-        renderItem={({ item }) => {
-          if (item.isBig) return (
-            <Pressable style={[sStyles.bigCard, { width: BIG_CARD_W, height: CARD_H }]} onPress={onCardPress}>
-              {item.image ? <Image source={{ uri: item.image }} style={sStyles.bigCardImage} /> : <View style={[sStyles.bigCardImage, { backgroundColor: "#222" }]} />}
-              <View style={sStyles.bigCardOverlay} />
-              <View style={sStyles.bigCardContent}>
-                <View style={sStyles.officialBadge}><Text style={sStyles.officialBadgeText}>RHAZN OFFICIEL</Text></View>
-                <Text style={sStyles.bigCardTitle}>{item.title}</Text>
-                <Text style={sStyles.bigCardBody} numberOfLines={2}>{item.content}</Text>
-              </View>
-            </Pressable>
-          );
+
+      {/* Tabs Images / Texte */}
+      <View style={acStyles.tabRow}>
+        <Pressable
+          style={[acStyles.tab, activeTab === "images" && acStyles.tabActive]}
+          onPress={() => setActiveTab("images")}
+        >
+          <Ionicons name="images-outline" size={13} color={activeTab === "images" ? "#000" : COLORS.muted} />
+          <Text style={[acStyles.tabTxt, activeTab === "images" && acStyles.tabTxtActive]}>Images</Text>
+        </Pressable>
+        <Pressable
+          style={[acStyles.tab, activeTab === "texte" && acStyles.tabActive]}
+          onPress={() => setActiveTab("texte")}
+        >
+          <Ionicons name="document-text-outline" size={13} color={activeTab === "texte" ? "#000" : COLORS.muted} />
+          <Text style={[acStyles.tabTxt, activeTab === "texte" && acStyles.tabTxtActive]}>Texte</Text>
+        </Pressable>
+      </View>
+
+      {/* ── TAB IMAGES : grille 3×3 animée ── */}
+      {activeTab === "images" && (
+        <View style={{ paddingHorizontal: 16 }}>
+          {supremeProducts.length === 0 ? (
+            <View style={acStyles.emptyGrid}>
+              <Ionicons name="images-outline" size={32} color={COLORS.muted} />
+              <Text style={acStyles.emptyTxt}>Aucune image publiée</Text>
+            </View>
+          ) : (
+            <>
+              <ScrollView
+  ref={scrollRef}
+  horizontal
+  pagingEnabled
+  scrollEnabled={false}
+  showsHorizontalScrollIndicator={false}
+  style={{ borderRadius: 16, overflow: "hidden" }}
+>
+  {Array.from({ length: totalPages }).map((_, pageIdx) => {
+    const pageItems = supremeProducts.slice(pageIdx * GRID_SIZE, (pageIdx + 1) * GRID_SIZE);
+    return (
+      <View key={pageIdx} style={{ width: BIG_CARD_W, flexDirection: "row", flexWrap: "wrap", gap: 2 }}>
+        {Array.from({ length: 6 }).map((_, i) => {
+          const product = pageItems[i];
+          const row = Math.floor(i / 3);
+          const col = i % 3;
           return (
-            <Pressable style={[sStyles.smallCard, { width: SMALL_CARD_W, height: CARD_H }]} onPress={onCardPress}>
-              {item.image ? <Image source={{ uri: item.image }} style={sStyles.smallCardImage} /> : <View style={[sStyles.smallCardImage, { backgroundColor: "#333" }]} />}
-              <View style={sStyles.smallCardOverlay} />
-              <View style={sStyles.smallCardContent}>
-                <Text style={sStyles.smallCardSummary} numberOfLines={3}>{item.summary ?? item.title ?? ""}</Text>
-              </View>
+            <Pressable
+              key={product?.id ?? `empty-${pageIdx}-${i}`}
+              style={[
+                acStyles.cell,
+                { width: CELL_SIZE, height: CELL_SIZE },
+                row === 0 && col === 0 && { borderTopLeftRadius: 16 },
+                row === 0 && col === 2 && { borderTopRightRadius: 16 },
+                row === 1 && col === 0 && { borderBottomLeftRadius: 16 },
+                row === 1 && col === 2 && { borderBottomRightRadius: 16 },
+              ]}
+              onPress={() => product && onCardPress()}
+            >
+              {product ? (
+                <>
+                  <Image source={{ uri: product.cover_url }} style={acStyles.cellImg} />
+                  <View style={acStyles.cellOverlay} />
+                </>
+              ) : (
+                <View style={acStyles.cellEmpty} />
+              )}
             </Pressable>
           );
-        }}
-      />
-      <DotsIndicator count={combinedData.length} activeRef={currentIndexRef} />
+        })}
+      </View>
+    );
+  })}
+</ScrollView>
+
+              {/* Dots pagination */}
+              {totalPages > 1 && (
+                <View style={acStyles.dotsRow}>
+                  {Array.from({ length: totalPages }).map((_, i) => (
+                    <Pressable key={i} onPress={() => setCurrentPage(i)}>
+                      <View style={[acStyles.dot, i === currentPage && acStyles.dotActive]} />
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </>
+          )}
+        </View>
+      )}
+
+      {/* ── TAB TEXTE : actualités texte ── */}
+      {activeTab === "texte" && (
+        <View style={{ paddingHorizontal: 16 }}>
+          {dbItems.length === 0 ? (
+            <View style={acStyles.emptyText}>
+              <Ionicons name="megaphone-outline" size={28} color={COLORS.muted} />
+              <Text style={acStyles.emptyTxt}>Aucune actualité</Text>
+              <Text style={acStyles.emptySubTxt}>Les annonces officielles RHAZN apparaîtront ici.</Text>
+            </View>
+          ) : (
+            dbItems.map((item) => (
+              <Pressable key={item.id} style={acStyles.newsCard} onPress={onCardPress}>
+                {item.image_url && (
+                  <Image source={{ uri: item.image_url }} style={acStyles.newsImg} />
+                )}
+                <View style={acStyles.newsBody}>
+                  <View style={acStyles.newsBadge}>
+                    <Text style={acStyles.newsBadgeTxt}>RHAZN OFFICIEL</Text>
+                  </View>
+                  <Text style={acStyles.newsTitle} numberOfLines={2}>{item.title}</Text>
+                  <Text style={acStyles.newsContent} numberOfLines={3}>{item.content}</Text>
+                </View>
+              </Pressable>
+            ))
+          )}
+        </View>
+      )}
     </View>
   );
 }
 
-function DotsIndicator({ count, activeRef }: { count: number; activeRef: React.MutableRefObject<number> }) {
-  const [active, setActive] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => setActive(activeRef.current), 100);
-    return () => clearInterval(t);
-  }, []);
-  return (
-    <View style={{ flexDirection: "row", justifyContent: "center", marginTop: 10, gap: 5 }}>
-      {Array.from({ length: count }).map((_, i) => (
-        <View key={i} style={{ width: i === active ? 18 : 6, height: 6, borderRadius: 3, backgroundColor: i === active ? COLORS.gold : COLORS.border }} />
-      ))}
-    </View>
-  );
-}
+const acStyles = StyleSheet.create({
+  tabRow:      { flexDirection: "row", gap: 8, paddingHorizontal: 16, marginBottom: 12 },
+  tab:         { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12, backgroundColor: COLORS.card, borderWidth: 1.5, borderColor: COLORS.border },
+  tabActive:   { backgroundColor: COLORS.gold, borderColor: COLORS.gold },
+  tabTxt:      { fontSize: 12, fontWeight: "800", color: COLORS.muted },
+  tabTxtActive:{ color: "#000" },
+
+ grid: { flexDirection: "row", flexWrap: "wrap", gap: 2, overflow: "hidden", borderRadius: 16, width: BIG_CARD_W },
+  cell:        { overflow: "hidden", backgroundColor: COLORS.border },
+  cellImg:     { width: "100%", height: "100%" },
+  cellOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.08)" },
+  cellEmpty:   { width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.04)" },
+
+  dotsRow:     { flexDirection: "row", justifyContent: "center", gap: 6, marginTop: 10, marginBottom: 4 },
+  dot:         { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.border },
+  dotActive:   { width: 18, height: 6, borderRadius: 3, backgroundColor: COLORS.gold },
+
+  emptyGrid:   { height: 180, alignItems: "center", justifyContent: "center", gap: 10, backgroundColor: "rgba(212,175,55,0.04)", borderRadius: 16, borderWidth: 1, borderColor: "rgba(212,175,55,0.12)" },
+  emptyText:   { padding: 20, alignItems: "center", gap: 8, backgroundColor: "rgba(212,175,55,0.04)", borderRadius: 16, borderWidth: 1, borderColor: "rgba(212,175,55,0.12)" },
+  emptyTxt:    { color: COLORS.muted, fontWeight: "800", fontSize: 14 },
+  emptySubTxt: { color: COLORS.muted, fontWeight: "600", fontSize: 12, textAlign: "center" },
+
+  newsCard:    { backgroundColor: COLORS.card, borderRadius: 16, marginBottom: 10, overflow: "hidden", borderWidth: 1, borderColor: COLORS.border, shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },
+  newsImg:     { width: "100%", height: 140 },
+  newsBody:    { padding: 14, gap: 6 },
+  newsBadge:   { backgroundColor: COLORS.gold, alignSelf: "flex-start", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  newsBadgeTxt:{ color: "#000", fontSize: 9, fontWeight: "900", letterSpacing: 0.8 },
+  newsTitle:   { color: COLORS.text, fontWeight: "900", fontSize: 15, lineHeight: 20 },
+  newsContent: { color: COLORS.muted, fontWeight: "600", fontSize: 12, lineHeight: 18 },
+});
+
 
 // ─────────────────────────────────────────────────────────────────
 // SECTION 2 – ACTUS
@@ -381,6 +472,7 @@ function ProduitsSection({
   const [singleDeleteId, setSingleDeleteId]= useState<string | null>(null);
   const [deleting,       setDeleting]      = useState(false);
   const { softDelete, supremeDelete } = useSoftDelete();
+  const [supremeUid, setSupremeUid] = useState<string | null>(null);
 
   // ✅ Tri + carte du user connecté toujours en première position
   const filtered = (() => {
@@ -621,13 +713,14 @@ export default function RhaznChannel() {
 
   const fetchProduits = async () => {
     try {
-      const { data, error } = await supabase.from("products")
-        .select("id, title, cover_url, quantity, price_htg, user_id, created_at, category_label, qob_count")
-        .eq("cadna_status", "approved")
-        .not("cover_url", "is", null)
-        .neq("cover_url", "")
-        .order("created_at", { ascending: false })
-        .limit(200);
+     const { data, error } = await supabase.from("products")
+  .select("id, title, cover_url, quantity, price_htg, user_id, created_at, category_label, qob_count")
+  .eq("cadna_status", "approved")
+  .is("deleted_at", null)
+  .not("cover_url", "is", null)
+  .neq("cover_url", "")
+  .order("created_at", { ascending: false })
+  .limit(200);
 
       if (error || !data || data.length === 0) return;
 
@@ -743,10 +836,10 @@ export default function RhaznChannel() {
         )}
 
         <ActualitesSection
-          dbItems={actuItems} isSupreme={isSupreme}
-          onEditPress={() => router.push("rz-channel/publish-news" as any)}
-          onCardPress={() => router.push("/rz-channel/archive" as any)}
-        />
+  dbItems={actuItems} isSupreme={isSupreme}
+  onEditPress={() => router.push("rz-channel/publish-news" as any)}
+  onCardPress={() => router.push({ pathname: "/rz-channel/auteur", params: { uid: SUPREME_UID } } as any)}
+/>
         <ActusSection items={prodItems} onAuthorPress={goToAuteur} />
         <ProduitsSection items={prodItems} onAuthorPress={goToAuteur} isSupreme={isSupreme} currentUid={currentUid} onDelete={handleDelete} />
       </ScrollView>
@@ -891,3 +984,7 @@ const sStyles = StyleSheet.create({
 
   rhaznLogoImg: { width: 40, height: 40 },
 });
+
+
+
+

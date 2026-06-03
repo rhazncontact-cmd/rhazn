@@ -28,6 +28,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import MusicDownloadModal from "../../components/MusicDownloadModal";
+import VideoRhazn from "../../components/VideoRhazn";
 import { useSoftDelete } from "../../hooks/useSoftDelete";
 import { avatarStore } from "../../lib/avatarStore";
 import { supabase } from "../../lib/supabase";
@@ -665,9 +667,9 @@ const INFO_SECTIONS = [
   { id: "video", label: "Vidéo", tabKey: "Vidéo" as const, tagline: "Le cinéma de vos idées", accent: C.teal, accentDim: "rgba(90,200,250,0.10)", accentBorder: "rgba(90,200,250,0.28)", icon: "videocam-outline" as const, badge: "BIENTÔT", badgeBg: C.teal, badgeText: "#000", description: "Documentaires, tutoriels, vlogs — RHAZN Vidéo.", features: [ { icon: "film-outline" as const, title: "Formats longs", text: "Jusqu'à 60 minutes." }, { icon: "cloud-upload-outline" as const, title: "Upload HD sécurisé", text: "Infrastructure optimisée." }, { icon: "eye-outline" as const, title: "Système de vues", text: "Vues = revenus QOB." }, { icon: "lock-closed-outline" as const, title: "Contenu Premium", text: "Accès payant TAN." } ] },
 ] as const;
 
-function InfoFeatureRow({ icon, title, text, accent }: { icon: keyof typeof Ionicons.glyphMap; title: string; text: string; accent: string }) {
+function InfoFeatureRow({ icon, title, text, accent, onPress }: { icon: keyof typeof Ionicons.glyphMap; title: string; text: string; accent: string; onPress?: () => void }) {
   return (
-    <View style={{ flexDirection: "row", gap: 12, marginBottom: 14 }}>
+    <Pressable onPress={onPress} style={{ flexDirection: "row", gap: 12, marginBottom: 14 }}>
       <View style={{ width: 40, height: 40, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center", flexShrink: 0, backgroundColor: `${accent}18`, borderColor: `${accent}30` }}>
         <Ionicons name={icon} size={16} color={accent} />
       </View>
@@ -675,11 +677,11 @@ function InfoFeatureRow({ icon, title, text, accent }: { icon: keyof typeof Ioni
         <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 13, marginBottom: 2 }}>{title}</Text>
         <Text style={{ color: "rgba(255,255,255,0.50)", fontWeight: "600", fontSize: 12, lineHeight: 17 }}>{text}</Text>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
-function InfoSectionCard({ section }: { section: (typeof INFO_SECTIONS)[number] }) {
+function InfoSectionCard({ section, onMusicPress, onVideoPress }: { section: (typeof INFO_SECTIONS)[number]; onMusicPress?: () => void; onVideoPress?: () => void }) {
   const [open, setOpen] = useState(false);
   const anim = useRef(new Animated.Value(0)).current;
   const chevron = anim.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "180deg"] });
@@ -707,14 +709,27 @@ function InfoSectionCard({ section }: { section: (typeof INFO_SECTIONS)[number] 
         <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
           <View style={{ height: 1, backgroundColor: section.accentBorder, marginBottom: 14, opacity: 0.4 }} />
           <Text style={{ color: "rgba(255,255,255,0.62)", fontSize: 13, lineHeight: 20, marginBottom: 16, fontWeight: "600" }}>{section.description}</Text>
-          {section.features.map((f) => <InfoFeatureRow key={f.title} icon={f.icon} title={f.title} text={f.text} accent={section.accent} />)}
+         {section.features.map((f) => (
+  <InfoFeatureRow
+    key={f.title}
+    icon={f.icon}
+    title={f.title}
+    text={f.text}
+    accent={section.accent}
+    onPress={
+      f.title === "Musique & Podcasts" ? onMusicPress :
+      f.title === "Formats longs" ? onVideoPress :
+      undefined
+    }
+  />
+))}
         </View>
       )}
     </View>
   );
 }
 
-function InfoTabContent({ activeSection }: { activeSection: "KoseSans"|"Audio"|"Vidéo" }) {
+function InfoTabContent({ activeSection, onMusicPress, onVideoPress }: { activeSection: "KoseSans"|"Audio"|"Vidéo"; onMusicPress: () => void; onVideoPress: () => void }) {
   const section = INFO_SECTIONS.find((s) => s.tabKey === activeSection)!;
   return (
     <View style={{ backgroundColor: C.dark, margin: 16, borderRadius: 24, overflow: "hidden", borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" }}>
@@ -728,12 +743,27 @@ function InfoTabContent({ activeSection }: { activeSection: "KoseSans"|"Audio"|"
       <View style={{ height: 1, backgroundColor: "rgba(255,255,255,0.07)", marginHorizontal: 16 }} />
       <View style={{ padding: 18 }}>
         <Text style={{ color: "#FFFFFF", fontWeight: "900", fontSize: 15, marginBottom: 14 }}>Fonctionnalités</Text>
-        {section.features.map((f) => <InfoFeatureRow key={f.title} icon={f.icon} title={f.title} text={f.text} accent={section.accent} />)}
+        {section.features.map((f) => (
+  <InfoFeatureRow
+    key={f.title}
+    icon={f.icon}
+    title={f.title}
+    text={f.text}
+    accent={section.accent}
+    onPress={
+  f.title === "Musique & Podcasts" ? onMusicPress :
+  f.title === "Formats longs" ? onVideoPress :
+  undefined
+}
+  />
+))}
       </View>
       <View style={{ height: 1, backgroundColor: "rgba(255,255,255,0.07)", marginHorizontal: 16 }} />
       <View style={{ padding: 16 }}>
         <Text style={{ color: "rgba(255,255,255,0.42)", fontWeight: "700", fontSize: 11, marginBottom: 12 }}>AUTRES FORMATS À VENIR</Text>
-        {INFO_SECTIONS.filter((s) => s.tabKey !== activeSection).map((s) => <InfoSectionCard key={s.id} section={s} />)}
+       {INFO_SECTIONS.filter((s) => s.tabKey !== activeSection).map((s) => (
+  <InfoSectionCard key={s.id} section={s} onMusicPress={onMusicPress} onVideoPress={onVideoPress} />
+))}
       </View>
     </View>
   );
@@ -787,6 +817,8 @@ export default function AuthorPage() {
   const [galleryImages,  setGalleryImages]  = useState<string[]>([]);
   const [galleryIndex,   setGalleryIndex]   = useState(0);
   const [galleryTitle,   setGalleryTitle]   = useState<string | null>(null);
+  const [showMusicModal, setShowMusicModal] = useState(false);
+const [showVideoModal, setShowVideoModal] = useState(false);
 
   const openGallery = (images: string[], index: number, title: string | null) => {
     setGalleryImages(images); setGalleryIndex(index); setGalleryTitle(title); setGalleryVisible(true);
@@ -1009,6 +1041,14 @@ const deleteSuspentz = async (id: string) => {
       {showNoTan && <NoTanOverlay mode={noTanMode} onRecharge={() => { setShowNoTan(false); router.push("/user-agent-access" as any); }} onLater={() => { setShowNoTan(false); router.back(); }} />}
       <AvatarModal visible={avatarModal} url={author.avatar} name={author.full_name} authorName={author.author_name} onClose={() => setAvatarModal(false)} />
       <GalleryViewer visible={galleryVisible} images={galleryImages} initialIndex={galleryIndex} title={galleryTitle} authorName={author.author_name ?? author.full_name} onClose={() => setGalleryVisible(false)} />
+        <MusicDownloadModal
+  visible={showMusicModal}
+  onClose={() => setShowMusicModal(false)}
+/>
+<VideoRhazn
+  visible={showVideoModal}
+  onClose={() => setShowVideoModal(false)}
+/>
 
       {/* Modal modifier nom */}
       <Modal visible={showEditName} transparent animationType="slide" onRequestClose={() => { setShowEditName(false); setNameError(null); }}>
@@ -1151,7 +1191,11 @@ const deleteSuspentz = async (id: string) => {
         {(activeTab === "KoseSans" || activeTab === "Audio" || activeTab === "Vidéo") && (
           <>
             <View style={sc.tabCountRow}><Text style={sc.tabCountNum}>0</Text><Text style={sc.tabCountLbl}>{activeTab}</Text></View>
-            <InfoTabContent activeSection={activeTab} />
+            <InfoTabContent
+  activeSection={activeTab as "KoseSans"|"Audio"|"Vidéo"}
+  onMusicPress={() => setShowMusicModal(true)}
+  onVideoPress={() => setShowVideoModal(true)}
+/>
           </>
         )}
       </ScrollView>
